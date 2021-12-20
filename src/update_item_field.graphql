@@ -1,0 +1,14 @@
+mutation ($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
+  updateProjectNextItemField(
+    input: {
+      projectId: $projectId
+      itemId: $itemId
+      fieldId: $fieldId
+      value: $value
+    }
+  ) {
+    projectNextItem {
+      id
+    }
+  }
+}

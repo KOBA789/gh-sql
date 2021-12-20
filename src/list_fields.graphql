@@ -1,0 +1,21 @@
+query ($owner: String!, $projectNumber: Int!) {
+  organization(login: $owner) {
+    ...ProjectNext
+  }
+  user(login: $owner) {
+    ...ProjectNext
+  }
+}
+
+fragment ProjectNext on ProjectNextOwner {
+  projectNext(number: $projectNumber) {
+    id
+    fields(first: 100) {
+      nodes {
+        id
+        name
+        settings
+      }
+    }
+  }
+}

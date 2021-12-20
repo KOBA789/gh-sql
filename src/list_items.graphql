@@ -1,0 +1,66 @@
+query ($projectId: ID!, $after: String) {
+  node(id: $projectId) {
+    ... on ProjectNext {
+      items(first: 100, after: $after) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          title
+          content {
+            __typename
+            ... on Issue {
+              repository {
+                owner {
+                  login
+                }
+                name
+              }
+              number
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
+            ... on PullRequest {
+              repository {
+                owner {
+                  login
+                }
+                name
+              }
+              number
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
+          }
+          fieldValues(first: 100) {
+            nodes {
+              id
+              projectField {
+                id
+              }
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+}
