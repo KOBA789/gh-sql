@@ -42,3 +42,19 @@ jobs:
           files: |
             dist/darwin-amd64
             dist/darwin-arm64
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build for x86_64 Windows
+        run: bash ./scripts/build.sh
+        env:
+          TARGET_TRIPLE: x86_64-pc-windows-msvc
+          GOOS_GOARCH: windows-amd64
+      - name: Upload release artifact
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            dist/windows-amd64
