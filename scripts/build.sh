@@ -2,4 +2,14 @@
 
 cargo build --release --locked
 mkdir -p ./dist
-mv target/release/gh-sql ./dist/linux-amd64
+
+case "$OSTYPE" in
+    darwin*)
+        EXECUTABLE=darwin-amd64
+    ;;
+    *)
+        EXECUTABLE=linux-amd64
+    ;;
+esac
+
+mv target/release/gh-sql "./dist/$EXECUTABLE"
