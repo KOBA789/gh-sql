@@ -20,10 +20,25 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2
-      - run: bash ./scripts/build.sh
+      - name: Build for Intel macOS
+        run: bash ./scripts/build.sh
+        env:
+          TARGET_TRIPLE: x86_64-apple-darwin
+          GOOS_GOARCH: darwin-amd64
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-apple-darwin
+      - name: Build for Apple Silicon macOS
+        run: bash ./scripts/build.sh
+        env:
+          TARGET_TRIPLE: aarch64-apple-darwin
+          GOOS_GOARCH: darwin-arm64
       - name: Upload release artifact
         uses: softprops/action-gh-release@v1
         with:
           draft: false
           prerelease: false
-          files: dist/darwin-amd64
+          files: |
+            dist/darwin-amd64
+            dist/darwin-arm64
