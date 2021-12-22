@@ -1,6 +1,6 @@
 # `gh-sql`: Query GitHub Projects (beta) with SQL
 
-![](./docs/demo.gif)
+![](./docs/demo.png)
 
 ## Installation
 
