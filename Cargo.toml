@@ -13,3 +13,4 @@ gluesql = { version = "0.9", default-features = false, features = ["sorter"] }
 async-trait = "0.1"
 rustyline = "9.1"
 structopt = "0.3"
+unicode-width = "0.1"
