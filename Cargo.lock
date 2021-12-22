@@ -334,6 +334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "structopt",
+ "unicode-width",
 ]
 
 [[package]]
