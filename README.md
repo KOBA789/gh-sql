@@ -1,4 +1,4 @@
-# ghsql: Query GitHub Projects (beta) with SQL
+# `gh-sql`: Query GitHub Projects (beta) with SQL
 
 ![](./docs/demo.gif)
 
