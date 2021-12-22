@@ -7,7 +7,7 @@
 ```
 gh extension install KOBA789/gh-sql
 ```
-**NOTE: Currently, Windows is not supported. See: #5**
+**NOTE: Currently, Windows is not supported. See: [#5](https://github.com/KOBA789/gh-sql/issues/5)**
 
 ## Features
 
