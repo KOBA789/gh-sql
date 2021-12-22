@@ -7,7 +7,7 @@
 ```
 gh extension install KOBA789/gh-sql
 ```
-**NOTE: Currently, only linux-amd64 is supported. See: [#1](https://github.com/KOBA789/gh-sql/issues/1)**
+**NOTE: Currently, only linux-amd64 and darwin-amd64 are supported.**
 
 ## Features
 
