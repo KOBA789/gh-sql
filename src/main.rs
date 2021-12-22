@@ -31,7 +31,10 @@ fn main() -> Result<()> {
     let glue = gluesql::prelude::Glue::new(storage);
 
     if let Some(statement) = opt.execute {
-        let batch_opt = batch::Opt { format: opt.output, statement };
+        let batch_opt = batch::Opt {
+            format: opt.output,
+            statement,
+        };
         let mut batch = batch::Batch::new(batch_opt, glue);
         batch.run()
     } else {

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use serde::{de::DeserializeOwned, Serialize, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use std::{
     io::Write,

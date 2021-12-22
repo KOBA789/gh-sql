@@ -853,14 +853,12 @@ impl StoreMut<String> for ProjectNextStorage {
                     } else {
                         String::new()
                     };
-                    if let Err(e) = self
-                        .update_item_field(
-                            cache.project_id.clone(),
-                            item_id.clone(),
-                            field.id.clone(),
-                            new_value_gql,
-                        )
-                    {
+                    if let Err(e) = self.update_item_field(
+                        cache.project_id.clone(),
+                        item_id.clone(),
+                        field.id.clone(),
+                        new_value_gql,
+                    ) {
                         return Err((self, GlueSQLError::Storage(e.into())));
                     }
                 }
@@ -881,9 +879,7 @@ impl StoreMut<String> for ProjectNextStorage {
         let cache = cache_guard.take().unwrap();
         drop(cache_guard);
         for item_id in keys {
-            if let Err(e) = self
-                .delete_item_field(cache.project_id.clone(), item_id)
-            {
+            if let Err(e) = self.delete_item_field(cache.project_id.clone(), item_id) {
                 return Err((self, GlueSQLError::Storage(e.into())));
             }
         }
