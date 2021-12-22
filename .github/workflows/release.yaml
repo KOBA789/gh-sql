@@ -9,13 +9,21 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  release-linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: cli/gh-extension-precompile@v1
         with:
           build_script_override: "./scripts/build.sh"
+  release-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: bash ./scripts/build.sh
+      - name: Upload release artifact
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          files: dist/darwin-amd64
