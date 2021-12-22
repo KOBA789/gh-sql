@@ -1,5 +1,5 @@
 use std::io::{BufWriter, Write};
-use std::process::{Stdio, Command};
+use std::process::{Command, Stdio};
 
 use anyhow::Result;
 use gluesql::prelude::*;
@@ -7,26 +7,21 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use structopt::StructOpt;
 
-mod github;
+mod gh;
 mod storage;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "ghsql")]
 struct Opt {
-    #[structopt(long, env)]
-    github_token: String,
     #[structopt(name = "OWNER")]
     owner: String,
     #[structopt(name = "PROJECT_NUMBER")]
     project_number: u32,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let opt = Opt::from_args();
-    let reqwest = reqwest::Client::new();
-    let github = github::Client::new("https://api.github.com".parse().unwrap(), opt.github_token, reqwest);
-    let storage = storage::ProjectNextStorage::new(github, opt.owner, opt.project_number).await?;
+    let storage = storage::ProjectNextStorage::new(opt.owner, opt.project_number)?;
     let mut glue = Glue::new(storage);
 
     let mut rl = Editor::<()>::new();
@@ -56,7 +51,10 @@ async fn main() -> Result<()> {
                         for row in rows {
                             pipe.write_all(b"| ")?;
                             for value in row {
-                                fn print_value<W: Write>(w: &mut W, value: &Value) -> std::io::Result<()> {
+                                fn print_value<W: Write>(
+                                    w: &mut W,
+                                    value: &Value,
+                                ) -> std::io::Result<()> {
                                     match value {
                                         Value::Bool(b) => write!(w, "{}", *b),
                                         Value::I64(i) => write!(w, "{}", *i),
@@ -69,7 +67,7 @@ async fn main() -> Result<()> {
                                         Value::Uuid(_) => unimplemented!(),
                                         Value::Map(_) => unimplemented!(),
                                         Value::List(list) => {
-                                            if let [head, tail @ .. ] = list.as_slice() {
+                                            if let [head, tail @ ..] = list.as_slice() {
                                                 print_value(w, head)?;
                                                 for elem in tail {
                                                     write!(w, ", ")?;
@@ -77,7 +75,7 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                             Ok(())
-                                        },
+                                        }
                                         Value::Null => write!(w, ""),
                                     }
                                 }

@@ -11,7 +11,7 @@ use gluesql::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::github::{self, GraphQLResponse};
+use crate::gh::{self, GraphQLResponse};
 
 fn deserialize_json_string<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
@@ -54,7 +54,6 @@ struct FieldIteration {
 }
 
 pub struct ProjectNextStorage {
-    github: github::Client,
     owner: String,
     project_number: u32,
     cache: Mutex<Option<Cache>>,
@@ -218,16 +217,15 @@ impl Cache {
 }
 
 impl ProjectNextStorage {
-    pub async fn new(github: github::Client, owner: String, project_number: u32) -> Result<Self> {
+    pub fn new(owner: String, project_number: u32) -> Result<Self> {
         Ok(Self {
-            github,
             owner,
             project_number,
             cache: Mutex::new(None),
         })
     }
 
-    async fn list_fields(&self) -> Result<(String, Vec<Field>)> {
+    fn list_fields(&self) -> Result<(String, Vec<Field>)> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct Variables {
@@ -317,8 +315,7 @@ impl ProjectNextStorage {
             owner: self.owner.clone(),
             project_number: self.project_number,
         };
-        let resp: github::GraphQLResponse<Response> =
-            self.github.graphql(query, &variables).await?;
+        let resp: gh::GraphQLResponse<Response> = gh::graphql(query, &variables)?;
         let project_next = resp
             .data
             .organization
@@ -379,7 +376,7 @@ impl ProjectNextStorage {
         Ok((project_id, fields))
     }
 
-    async fn scan_items(&self, project_id: String, fields: &[Field]) -> Result<Vec<(String, Row)>> {
+    fn scan_items(&self, project_id: String, fields: &[Field]) -> Result<Vec<(String, Row)>> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct Variables {
@@ -479,7 +476,7 @@ impl ProjectNextStorage {
                 project_id: project_id.clone(),
                 after: after.clone(),
             };
-            let resp: GraphQLResponse<Response> = self.github.graphql(query, &variables).await?;
+            let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
             let ProjectNextItemConnection { page_info, nodes } = resp.data.node.items;
             items.extend(nodes);
             if let Some(end_cursor) = page_info.end_cursor {
@@ -639,9 +636,9 @@ impl ProjectNextStorage {
         }
     }
 
-    async fn fetch_data(&self) -> Result<Cache> {
-        let (project_id, fields) = self.list_fields().await?;
-        let items = self.scan_items(project_id.clone(), &fields).await?;
+    fn fetch_data(&self) -> Result<Cache> {
+        let (project_id, fields) = self.list_fields()?;
+        let items = self.scan_items(project_id.clone(), &fields)?;
         Ok(Cache {
             project_id,
             fields,
@@ -649,7 +646,7 @@ impl ProjectNextStorage {
         })
     }
 
-    async fn update_item_field(
+    fn update_item_field(
         &self,
         project_id: String,
         item_id: String,
@@ -674,14 +671,14 @@ impl ProjectNextStorage {
             field_id,
             value,
         };
-        let resp: GraphQLResponse<Response> = self.github.graphql(query, &variables).await?;
+        let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
         if !resp.errors.is_empty() {
             return Err(anyhow::anyhow!("Error: {:?}", resp.errors));
         }
         Ok(())
     }
 
-    async fn delete_item_field(&self, project_id: String, item_id: String) -> Result<()> {
+    fn delete_item_field(&self, project_id: String, item_id: String) -> Result<()> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct Variables {
@@ -696,7 +693,7 @@ impl ProjectNextStorage {
             project_id,
             item_id,
         };
-        let resp: GraphQLResponse<Response> = self.github.graphql(query, &variables).await?;
+        let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
         if !resp.errors.is_empty() {
             return Err(anyhow::anyhow!("Error: {:?}", resp.errors));
         }
@@ -711,7 +708,6 @@ impl Store<String> for ProjectNextStorage {
         if cache.is_none() {
             *cache = Some(
                 self.fetch_data()
-                    .await
                     .map_err(|e| GlueSQLError::Storage(e.into()))?,
             );
         }
@@ -729,7 +725,6 @@ impl Store<String> for ProjectNextStorage {
         if cache.is_none() {
             *cache = Some(
                 self.fetch_data()
-                    .await
                     .map_err(|e| GlueSQLError::Storage(e.into()))?,
             );
         }
@@ -865,7 +860,6 @@ impl StoreMut<String> for ProjectNextStorage {
                             field.id.clone(),
                             new_value_gql,
                         )
-                        .await
                     {
                         return Err((self, GlueSQLError::Storage(e.into())));
                     }
@@ -889,7 +883,6 @@ impl StoreMut<String> for ProjectNextStorage {
         for item_id in keys {
             if let Err(e) = self
                 .delete_item_field(cache.project_id.clone(), item_id)
-                .await
             {
                 return Err((self, GlueSQLError::Storage(e.into())));
             }
