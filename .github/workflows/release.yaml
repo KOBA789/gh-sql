@@ -50,11 +50,11 @@ jobs:
         run: bash ./scripts/build.sh
         env:
           TARGET_TRIPLE: x86_64-pc-windows-msvc
-          GOOS_GOARCH: windows-amd64
+          GOOS_GOARCH: windows-amd64.exe
       - name: Upload release artifact
         uses: softprops/action-gh-release@v1
         with:
           draft: false
           prerelease: false
           files: |
-            dist/windows-amd64
+            dist/windows-amd64.exe
