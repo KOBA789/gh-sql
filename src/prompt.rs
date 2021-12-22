@@ -4,9 +4,11 @@ use std::{
 };
 
 use anyhow::Result;
+use futures::executor::block_on;
 use gluesql::{
     executor::Payload,
-    prelude::{Glue, Value},
+    prelude::{plan, translate, Glue, Value},
+    sqlparser::tokenizer::Token,
     store::{GStore, GStoreMut},
 };
 use rustyline::{error::ReadlineError, Editor, Helper};
@@ -26,6 +28,8 @@ where
     opt: Opt,
     glue: Glue<K, S>,
     rl: Editor<H>,
+    input_buf: String,
+    tokens_buf: Vec<Token>,
 }
 
 impl<K, S, H> Prompt<K, S, H>
@@ -35,14 +39,24 @@ where
     H: Helper,
 {
     pub fn new(opt: Opt, glue: Glue<K, S>, rl: Editor<H>) -> Self {
-        Self { opt, rl, glue }
+        Self {
+            opt,
+            rl,
+            glue,
+            input_buf: String::new(),
+            tokens_buf: vec![],
+        }
     }
 
     pub fn run(&mut self) -> Result<()> {
         loop {
             if let Err(e) = self.readline() {
                 match e.downcast::<ReadlineError>() {
-                    Ok(ReadlineError::Interrupted) | Ok(ReadlineError::Eof) => {
+                    Ok(ReadlineError::Interrupted) => {
+                        self.input_buf = String::new();
+                        self.tokens_buf = vec![];
+                    }
+                    Ok(ReadlineError::Eof) => {
                         return Ok(());
                     }
                     Ok(e) => return Err(e.into()),
@@ -52,13 +66,54 @@ where
         }
     }
 
+    fn is_buffer_empty(&self) -> bool {
+        self.input_buf.is_empty() && self.tokens_buf.is_empty()
+    }
+
+    fn prompt(&self) -> &'static str {
+        if self.is_buffer_empty() {
+            "ghsql> "
+        } else {
+            "    -> "
+        }
+    }
+
     fn readline(&mut self) -> Result<()> {
-        let line = self.rl.readline("ghsql> ")?;
+        let line = self.rl.readline(self.prompt())?;
         if line.is_empty() {
             return Ok(());
         }
         self.rl.add_history_entry(line.as_str());
-        let output = self.glue.execute(&line);
+        self.input_buf.push_str(&line);
+        self.input_buf.push('\n');
+        let dialect = gluesql::sqlparser::dialect::GenericDialect {};
+        let mut tokenizer =
+            gluesql::sqlparser::tokenizer::Tokenizer::new(&dialect, &self.input_buf);
+        if let Ok(new_tokens) = tokenizer.tokenize() {
+            self.tokens_buf.extend(new_tokens);
+            self.input_buf = String::new();
+        }
+        let tokens = if let Some(pos) = self.tokens_buf.iter().position(|t| t == &Token::SemiColon)
+        {
+            let ws_len = self.tokens_buf[pos + 1..]
+                .iter()
+                .take_while(|t| matches!(t, Token::Whitespace(_)))
+                .count();
+            self.tokens_buf.drain(..=pos + ws_len).collect()
+        } else {
+            return Ok(());
+        };
+        let mut parser = gluesql::sqlparser::parser::Parser::new(tokens, &dialect);
+        let statement = match parser.parse_statement() {
+            Ok(statement) => statement,
+            Err(e) => {
+                eprintln!("Syntax Error: {}", e);
+                return Ok(());
+            }
+        };
+        let output = translate(&statement)
+            .and_then(|statement| block_on(plan(self.glue.storage.as_ref().unwrap(), statement)))
+            .and_then(|plan| self.glue.execute_stmt(plan));
         match output {
             Ok(Payload::Select { labels, rows }) => {
                 print(&self.opt.format, labels, rows)?;
