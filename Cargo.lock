@@ -329,6 +329,7 @@ version = "0.3.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
  "gluesql",
  "rustyline",
  "serde",
