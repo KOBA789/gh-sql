@@ -44,9 +44,10 @@ ARGS:
 gh sql YOUR_NAME YOUR_PROJECT_NUMBER -oj -e 'select * from items;'
 ```
 
+### eg. Make task list in markdown
+
 Of course, you can also pipe it to `jq`.
 
-eg. make markdown list:
 ```bash
 gh sql YOUR_NAME YOUR_PROJECT_NUMBER -oj -e 'select * from items where Repository is not null;' | \
     jq -r '"- " + .Repository + "#" + (.Issue | tostring)'
