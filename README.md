@@ -19,7 +19,8 @@ gh extension install KOBA789/gh-sql
 
 ```
 USAGE:
-    gh-sql [OPTIONS] <OWNER> <PROJECT_NUMBER>
+    gh sql [FLAGS]
+    gh sql [OPTIONS] <OWNER> <PROJECT_NUMBER>
 
 FLAGS:
     -h, --help       Prints help information
