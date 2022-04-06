@@ -49,6 +49,13 @@ query ($projectId: ID!, $after: String) {
                 }
               }
             }
+            ... on DraftIssue {
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
           }
           fieldValues(first: 100) {
             nodes {
