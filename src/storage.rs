@@ -589,13 +589,13 @@ impl ProjectNextStorage {
                 options: vec![],
             },
             ColumnDef {
-                name: "duration".to_string(),
-                data_type: DataType::Int,
+                name: "start_date".to_string(),
+                data_type: DataType::Text,
                 options: vec![],
             },
             ColumnDef {
-                name: "start_date".to_string(),
-                data_type: DataType::Text,
+                name: "duration".to_string(),
+                data_type: DataType::Int,
                 options: vec![],
             },
             ColumnDef {
