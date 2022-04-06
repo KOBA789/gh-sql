@@ -408,11 +408,23 @@ impl ProjectNextStorage {
             field_values: ProjectNextItemFieldValueConnection,
         }
         #[derive(Deserialize)]
+        #[serde(tag = "__typename")]
+        enum ProjectNextItemContent {
+            Issue(ProjectNextItemContentIssue),
+            PullRequest(ProjectNextItemContentIssue),
+            DraftIssue(ProjectNextItemContentDraftIssue),
+        }
+        #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemContent {
+        struct ProjectNextItemContentIssue {
             repository: Repository,
             number: u64,
             labels: LabelConnection,
+            assignees: UserConnection,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ProjectNextItemContentDraftIssue {
             assignees: UserConnection,
         }
         #[derive(Deserialize)]
@@ -468,6 +480,58 @@ impl ProjectNextStorage {
         struct ProjectNextField {
             id: String,
         }
+        impl ProjectNextItemContent {
+            fn into_row(self) -> (Value, Value, Value, Value) {
+                match self {
+                    ProjectNextItemContent::Issue(issue)
+                    | ProjectNextItemContent::PullRequest(issue) => issue.into_row(),
+                    ProjectNextItemContent::DraftIssue(draft) => draft.into_row(),
+                }
+            }
+        }
+        impl ProjectNextItemContentIssue {
+            fn into_row(self) -> (Value, Value, Value, Value) {
+                let repo = format!(
+                    "{}/{}",
+                    self.repository.owner.login, self.repository.name
+                );
+                let assignees = self
+                    .assignees
+                    .nodes
+                    .into_iter()
+                    .map(|u| Value::Str(u.login))
+                    .collect();
+                let labels = self
+                    .labels
+                    .nodes
+                    .into_iter()
+                    .map(|l| Value::Str(l.name))
+                    .collect();
+                (
+                    Value::Str(repo),
+                    Value::I64(self.number as i64),
+                    Value::List(assignees),
+                    Value::List(labels),
+                )
+            }
+        }
+        impl ProjectNextItemContentDraftIssue {
+            fn into_row(self) -> (Value, Value, Value, Value) {
+                let assignees = self
+                    .assignees
+                    .nodes
+                    .into_iter()
+                    .map(|u| Value::Str(u.login))
+                    .collect();
+                (
+                    Value::Null,
+                    Value::Null,
+                    Value::List(assignees),
+                    Value::List(vec![]),
+                )
+            }
+        }
+
         let query = include_str!("list_items.graphql");
         let mut items = vec![];
         let mut after = None;
@@ -491,30 +555,7 @@ impl ProjectNextStorage {
             .map(|item| {
                 let key = item.id;
                 let (repo, issue, assignees, labels) = match item.content {
-                    Some(content) => {
-                        let repo = format!(
-                            "{}/{}",
-                            content.repository.owner.login, content.repository.name
-                        );
-                        let assignees = content
-                            .assignees
-                            .nodes
-                            .into_iter()
-                            .map(|u| Value::Str(u.login))
-                            .collect();
-                        let labels = content
-                            .labels
-                            .nodes
-                            .into_iter()
-                            .map(|l| Value::Str(l.name))
-                            .collect();
-                        (
-                            Value::Str(repo),
-                            Value::I64(content.number as i64),
-                            Value::List(assignees),
-                            Value::List(labels),
-                        )
-                    }
+                    Some(content) => content.into_row(),
                     None => (Value::Null, Value::Null, Value::Null, Value::Null),
                 };
                 let reserved_columns = [
