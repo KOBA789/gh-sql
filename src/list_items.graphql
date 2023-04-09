@@ -17,12 +17,12 @@ query listItems($projectId: ID!, $after: String) {
                 nameWithOwner
               }
               number
-              labels(first: 100) {
+              labels(first: 10) {
                 nodes {
                   name
                 }
               }
-              assignees(first: 100) {
+              assignees(first: 10) {
                 nodes {
                   login
                 }
@@ -34,12 +34,12 @@ query listItems($projectId: ID!, $after: String) {
                 nameWithOwner
               }
               number
-              labels(first: 100) {
+              labels(first: 10) {
                 nodes {
                   name
                 }
               }
-              assignees(first: 100) {
+              assignees(first: 10) {
                 nodes {
                   login
                 }
@@ -47,14 +47,14 @@ query listItems($projectId: ID!, $after: String) {
             }
             ... on DraftIssue {
               title
-              assignees(first: 100) {
+              assignees(first: 10) {
                 nodes {
                   login
                 }
               }
             }
           }
-          fieldValues(first: 100) {
+          fieldValues(first: 30) {
             nodes {
               __typename
               ... on ProjectV2ItemFieldDateValue {
@@ -72,7 +72,7 @@ query listItems($projectId: ID!, $after: String) {
               }
 
               ... on ProjectV2ItemFieldLabelValue {
-                labels(first: 100) {
+                labels(first: 10) {
                   nodes {
                     name
                   }
@@ -99,7 +99,7 @@ query listItems($projectId: ID!, $after: String) {
               }
 
               ... on ProjectV2ItemFieldPullRequestValue {
-                pullRequests(first: 100) {
+                pullRequests(first: 10) {
                   nodes {
                     title
                   }
@@ -119,7 +119,7 @@ query listItems($projectId: ID!, $after: String) {
               }
 
               ... on ProjectV2ItemFieldReviewerValue {
-                reviewers(first: 100) {
+                reviewers(first: 10) {
                   nodes {
                     __typename
                     ... on Team {
@@ -150,7 +150,7 @@ query listItems($projectId: ID!, $after: String) {
               }
 
               ... on ProjectV2ItemFieldUserValue {
-                users(first: 100) {
+                users(first: 10) {
                   nodes {
                     login
                   }
