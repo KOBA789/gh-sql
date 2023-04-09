@@ -1,4 +1,4 @@
-mutation ($projectId: ID!, $itemId: ID!) {
+mutation deleteItem($projectId: ID!, $itemId: ID!) {
   deleteProjectNextItem(
     input: {
       projectId: $projectId

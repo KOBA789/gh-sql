@@ -1,4 +1,4 @@
-query ($projectId: ID!, $after: String) {
+query listItems($projectId: ID!, $after: String) {
   node(id: $projectId) {
     ... on ProjectNext {
       items(first: 100, after: $after) {

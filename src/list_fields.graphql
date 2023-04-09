@@ -1,4 +1,4 @@
-query ($owner: String!, $projectNumber: Int!) {
+query listFields($owner: String!, $projectNumber: Int!) {
   organization(login: $owner) {
     ...ProjectNext
   }
