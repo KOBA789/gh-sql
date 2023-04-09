@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{sync::Mutex, borrow::Cow};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -211,6 +211,7 @@ impl Cache {
 mod generated {
     type Date = String;
     include!(concat!(env!("OUT_DIR"), "/list_fields.rs"));
+    include!(concat!(env!("OUT_DIR"), "/list_items.rs"));
 }
 
 impl ProjectNextStorage {
@@ -357,155 +358,181 @@ impl ProjectNextStorage {
     }
 
     fn scan_items(&self, project_id: String, fields: &[Field]) -> Result<Vec<(String, Row)>> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            project_id: String,
-            after: Option<String>,
+        use generated::list_items::*;
+        trait IntoQuadRow {
+            /// repo, issue number, assignees, labels
+            fn into_row(self) -> (Value, Value, Value, Value);
         }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Response {
-            node: ProjectNext,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNext {
-            items: ProjectNextItemConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemConnection {
-            page_info: PageInfo,
-            nodes: Vec<ProjectNextItem>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItem {
-            id: String,
-            title: String,
-            content: Option<ProjectNextItemContent>,
-            field_values: ProjectNextItemFieldValueConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(tag = "__typename")]
-        enum ProjectNextItemContent {
-            Issue(ProjectNextItemContentIssue),
-            PullRequest(ProjectNextItemContentIssue),
-            DraftIssue(ProjectNextItemContentDraftIssue),
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemContentIssue {
-            repository: Repository,
-            number: u64,
-            labels: LabelConnection,
-            assignees: UserConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemContentDraftIssue {
-            assignees: UserConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct LabelConnection {
-            nodes: Vec<Label>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Label {
-            name: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct UserConnection {
-            nodes: Vec<User>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct User {
-            login: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Repository {
-            owner: RepositoryOwner,
-            name: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RepositoryOwner {
-            login: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemFieldValueConnection {
-            nodes: Vec<ProjectNextItemFieldValue>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct PageInfo {
-            has_next_page: bool,
-            end_cursor: Option<String>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemFieldValue {
-            project_field: ProjectNextField,
-            value: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextField {
-            id: String,
-        }
-        impl ProjectNextItemContent {
+        impl IntoQuadRow for ListItemsNodeOnProjectV2ItemsNodesContent {
             fn into_row(self) -> (Value, Value, Value, Value) {
                 match self {
-                    ProjectNextItemContent::Issue(issue)
-                    | ProjectNextItemContent::PullRequest(issue) => issue.into_row(),
-                    ProjectNextItemContent::DraftIssue(draft) => draft.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::Issue(issue)
+                    => issue.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::PullRequest(pr) => pr.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::DraftIssue(draft) => draft.into_row(),
                 }
             }
         }
-        impl ProjectNextItemContentIssue {
-            fn into_row(self) -> (Value, Value, Value, Value) {
-                let repo = format!("{}/{}", self.repository.owner.login, self.repository.name);
-                let assignees = self
-                    .assignees
-                    .nodes
-                    .into_iter()
-                    .map(|u| Value::Str(u.login))
-                    .collect();
-                let labels = self
-                    .labels
-                    .nodes
-                    .into_iter()
-                    .map(|l| Value::Str(l.name))
-                    .collect();
-                (
-                    Value::Str(repo),
-                    Value::I64(self.number as i64),
-                    Value::List(assignees),
-                    Value::List(labels),
-                )
-            }
+        macro_rules! impl_into_quad_rows {
+            ($($t:tt),*) => {
+                $(impl_into_quad_row!($t));*
+            };
         }
-        impl ProjectNextItemContentDraftIssue {
+        macro_rules! impl_into_quad_row {
+            ($t:ident) => {
+                impl IntoQuadRow for $t {
+                    fn into_row(self) -> (Value, Value, Value, Value) {
+                        let repo = self.repository.name_with_owner;
+                        let assignees = self
+                            .assignees
+                            .nodes
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .map(|u| Value::Str(u.login))
+                            .collect();
+                        let labels = self
+                            .labels
+                            .into_iter()
+                            .flat_map(|l| l.nodes)
+                            .flatten()
+                            .flatten()
+                            .map(|l| Value::Str(l.name))
+                            .collect();
+                        (
+                            Value::Str(repo),
+                            Value::I64(self.number as i64),
+                            Value::List(assignees),
+                            Value::List(labels),
+                        )
+                    }
+                }
+            };
+        }
+        impl_into_quad_rows!{
+            ListItemsNodeOnProjectV2ItemsNodesContentOnIssue,
+            ListItemsNodeOnProjectV2ItemsNodesContentOnPullRequest
+        }
+        impl IntoQuadRow for ListItemsNodeOnProjectV2ItemsNodesContentOnDraftIssue {
             fn into_row(self) -> (Value, Value, Value, Value) {
                 let assignees = self
-                    .assignees
-                    .nodes
-                    .into_iter()
-                    .map(|u| Value::Str(u.login))
-                    .collect();
+                            .assignees
+                            .nodes
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .map(|u| Value::Str(u.login))
+                            .collect();
                 (
                     Value::Null,
                     Value::Null,
                     Value::List(assignees),
                     Value::List(vec![]),
                 )
+            }
+        }
+
+        impl ListItemsNodeOnProjectV2ItemsNodesContent {
+            fn title(&self) -> &str {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesContent::DraftIssue(d) => &d.title,
+                    ListItemsNodeOnProjectV2ItemsNodesContent::Issue(i) => &i.title,
+                    ListItemsNodeOnProjectV2ItemsNodesContent::PullRequest(p) => &p.title,
+                }
+            }
+        }
+        impl ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes {
+            fn field(&self) -> &FieldFragment {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldDateValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldIterationValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldLabelValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldMilestoneValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldNumberValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldPullRequestValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldRepositoryValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldReviewerValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldSingleSelectValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldTextValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldUserValue(i) => &i.field,
+                }
+            }
+            fn representative_str(&self) -> Option<Cow<'_, String>> {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldDateValue(f) => f.date.as_ref().map(Cow::Borrowed),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldIterationValue(f) => Some(Cow::Borrowed(&f.title)),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldLabelValue(f) => {
+                        let l = f.labels.as_ref()?;
+                        let names: Vec<&str> = l.nodes.iter().flatten().flatten().map(|ls| ls.name.as_str()).collect();
+                        if names.is_empty() {
+                            return None;
+                        }
+                        Some(Cow::Owned(names.join(", ")))
+                    }
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldMilestoneValue(f) => f.milestone.as_ref().map(|m| Cow::Borrowed(&m.title)),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldNumberValue(f) => f.number.map(|m| Cow::Owned(m.to_string())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldPullRequestValue(f) => {
+                        let l = f.pull_requests.as_ref()?;
+                        let titles: Vec<&str> = l.nodes.iter().flatten().flatten().map(|ls| ls.title.as_str()).collect();
+                        if titles.is_empty() {
+                            return None;
+                        }
+                        Some(Cow::Owned(titles.join(", ")))
+                    }
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldRepositoryValue(f) => f.repository.as_ref().map(|re| Cow::Borrowed(&re.name)),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldReviewerValue(f) => {
+                        let l = f.reviewers.as_ref()?;
+                        let titles: Vec<&str> = l.nodes.iter().flatten().flatten().flat_map(|ls| ls.name()).collect();
+                        if titles.is_empty() {
+                            return None;
+                        }
+                        Some(Cow::Owned(titles.join(", ")))
+                    }
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldSingleSelectValue(f) => f.name.as_ref().map(Cow::Borrowed),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldTextValue(f) => f.text.as_ref().map(Cow::Borrowed),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldUserValue(f) => {
+                        let l = f.users.as_ref()?;
+                        let titles: Vec<&str> = l.nodes.iter().flatten().flatten().map(|ls| ls.login.as_str()).collect();
+                        if titles.is_empty() {
+                            return None;
+                        }
+                        Some(Cow::Owned(titles.join(", ")))
+                    }
+                }
+            }
+            fn as_single_select(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldSingleSelectValue> {
+                if let Self::ProjectV2ItemFieldSingleSelectValue(v) = self {
+                    Some(v)
+                }
+                else {
+                    None
+                }
+            }
+            fn as_iteration(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldIterationValue> {
+                if let Self::ProjectV2ItemFieldIterationValue(v) = self {
+                    Some(v)
+                }
+                else {
+                    None
+                }
+            }
+        }
+        impl FieldFragment {
+            fn id(&self) -> &str {
+                match self {
+                    FieldFragment::ProjectV2Field(i) => &i.id,
+                    FieldFragment::ProjectV2IterationField(i) => &i.id,
+                    FieldFragment::ProjectV2SingleSelectField(i) => &i.id,
+                }
+            }
+        }
+        impl ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldReviewerValueReviewersNodes {
+            fn name(&self) -> Option<&str> {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldReviewerValueReviewersNodes::Team(t) => Some(&t.name),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldReviewerValueReviewersNodes::User(u) => Some(&u.login),
+                    _ => None,
+                }
             }
         }
 
@@ -517,9 +544,9 @@ impl ProjectNextStorage {
                 project_id: project_id.clone(),
                 after: after.clone(),
             };
-            let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
-            let ProjectNextItemConnection { page_info, nodes } = resp.data.node.items;
-            items.extend(nodes);
+            let resp: GraphQLResponse<ResponseData> = gh::graphql(query, &variables)?;
+            let Some(ListItemsNode::ProjectV2(ListItemsNodeOnProjectV2 { items: ListItemsNodeOnProjectV2Items { page_info, nodes } })) = resp.data.node else { unreachable!("the id can only be for projectV2") };
+            items.extend(nodes.into_iter().flatten().flatten());
             if let Some(end_cursor) = page_info.end_cursor {
                 after = Some(end_cursor);
                 page_info.has_next_page
@@ -531,6 +558,7 @@ impl ProjectNextStorage {
             .into_iter()
             .map(|item| {
                 let key = item.id;
+                let title = item.content.as_ref().map(ListItemsNodeOnProjectV2ItemsNodesContent::title).unwrap_or_default().to_string();
                 let (repo, issue, assignees, labels) = match item.content {
                     Some(content) => content.into_row(),
                     None => (Value::Null, Value::Null, Value::Null, Value::Null),
@@ -539,7 +567,7 @@ impl ProjectNextStorage {
                     Value::Str(key.clone()),
                     repo,
                     issue,
-                    Value::Str(item.title),
+                    Value::Str(title),
                     assignees,
                     labels,
                 ];
@@ -548,16 +576,23 @@ impl ProjectNextStorage {
                         .field_values
                         .nodes
                         .iter()
-                        .find(|value| value.project_field.id == field.id);
+                        .flatten()
+                        .flatten()
+                        .find(|value| value.field().id() == field.id);
                     match value {
                         Some(value) => match &field.kind {
-                            FieldKind::Normal => Value::Str(value.value.clone()),
-                            FieldKind::SingleSelect(options) => {
-                                if let Some(opt) = options.iter().find(|opt| opt.id == value.value)
+                            FieldKind::Normal => match value.representative_str() {
+                                Some(cow) => {
+                                    Value::Str(cow.into_owned())
+                                },
+                                None => {Value::Null},
+                            },
+                            FieldKind::SingleSelect(_) => {
+                                if let Some(opt) = value.as_single_select().unwrap().name.as_ref()
                                 {
-                                    Value::Str(opt.name.clone())
+                                    Value::Str(opt.to_owned())
                                 } else {
-                                    Value::Str("Unknown".to_string())
+                                    Value::Null
                                 }
                             }
                             FieldKind::Iteration {
@@ -565,13 +600,15 @@ impl ProjectNextStorage {
                                 completed_iterations,
                                 ..
                             } => {
+                                let value = value.as_iteration().unwrap();
+                                let title = &value.title;
                                 if let Some(iter) =
-                                    iterations.iter().find(|iter| iter.id == value.value)
+                                    iterations.iter().find(|iter| &iter.title == title)
                                 {
                                     Value::Str(iter.title.clone())
                                 } else if let Some(iter) = completed_iterations
                                     .iter()
-                                    .find(|iter| iter.id == value.value)
+                                    .find(|iter| &iter.id == title)
                                 {
                                     Value::Str(iter.title.clone())
                                 } else {

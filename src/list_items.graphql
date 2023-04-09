@@ -1,6 +1,7 @@
 query listItems($projectId: ID!, $after: String) {
   node(id: $projectId) {
-    ... on ProjectNext {
+    __typename
+    ... on ProjectV2 {
       items(first: 100, after: $after) {
         pageInfo {
           hasNextPage
@@ -8,15 +9,12 @@ query listItems($projectId: ID!, $after: String) {
         }
         nodes {
           id
-          title
           content {
             __typename
             ... on Issue {
+              title
               repository {
-                owner {
-                  login
-                }
-                name
+                nameWithOwner
               }
               number
               labels(first: 100) {
@@ -31,11 +29,9 @@ query listItems($projectId: ID!, $after: String) {
               }
             }
             ... on PullRequest {
+              title
               repository {
-                owner {
-                  login
-                }
-                name
+                nameWithOwner
               }
               number
               labels(first: 100) {
@@ -50,6 +46,7 @@ query listItems($projectId: ID!, $after: String) {
               }
             }
             ... on DraftIssue {
+              title
               assignees(first: 100) {
                 nodes {
                   login
@@ -59,15 +56,128 @@ query listItems($projectId: ID!, $after: String) {
           }
           fieldValues(first: 100) {
             nodes {
-              id
-              projectField {
-                id
+              __typename
+              ... on ProjectV2ItemFieldDateValue {
+                date
+                field {
+                  ...FieldFragment
+                }
               }
-              value
+
+              ... on ProjectV2ItemFieldIterationValue {
+                title
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldLabelValue {
+                labels(first: 100) {
+                  nodes {
+                    name
+                  }
+                }
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldMilestoneValue {
+                milestone {
+                  title
+                }
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldNumberValue {
+                number
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldPullRequestValue {
+                pullRequests(first: 100) {
+                  nodes {
+                    title
+                  }
+                }
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldRepositoryValue {
+                repository {
+                  name
+                }
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldReviewerValue {
+                reviewers(first: 100) {
+                  nodes {
+                    __typename
+                    ... on Team {
+                      name
+                    }
+                    ... on User {
+                      login
+                    }
+                  }
+                }
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldTextValue {
+                text
+                field {
+                  ...FieldFragment
+                }
+              }
+
+              ... on ProjectV2ItemFieldUserValue {
+                users(first: 100) {
+                  nodes {
+                    login
+                  }
+                }
+                field {
+                  ...FieldFragment
+                }
+              }
             }
           }
         }
       }
     }
+  }
+}
+
+fragment FieldFragment on ProjectV2FieldConfiguration {
+  __typename
+  ... on ProjectV2Field {
+    id
+  }
+
+  ... on ProjectV2IterationField {
+    id
+  }
+
+  ... on ProjectV2SingleSelectField {
+    id
   }
 }
