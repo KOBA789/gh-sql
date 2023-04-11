@@ -8,6 +8,7 @@ edition = "2021"
 [build-dependencies]
 graphql_client_codegen = "0.12.0"
 syn = "1.0.82"
+reqwest = { version = "0.11.15", features = ["blocking"] }
 
 [dependencies]
 anyhow = "1"
