@@ -15,7 +15,7 @@ fn main() {
     // download it from https://docs.github.com/public/schema.docs.graphql
     let schema_path = "schema.docs.graphql".to_string();
     for file_name in [
-        // "delete_item",
+        "delete_item",
         "list_items",
         "list_fields",
         "update_item_field",

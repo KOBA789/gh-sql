@@ -243,6 +243,7 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/list_fields.rs"));
     include!(concat!(env!("OUT_DIR"), "/list_items.rs"));
     include!(concat!(env!("OUT_DIR"), "/update_item_field.rs"));
+    include!(concat!(env!("OUT_DIR"), "/delete_item.rs"));
 }
 
 impl ProjectNextStorage {
@@ -773,14 +774,8 @@ impl ProjectNextStorage {
     }
 
     fn delete_item_field(&self, project_id: String, item_id: String) -> Result<()> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            project_id: String,
-            item_id: String,
-        }
+        use generated::delete_item::*;
         #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
         struct Response {}
         let query = include_str!("./delete_item.graphql");
         let variables = Variables {

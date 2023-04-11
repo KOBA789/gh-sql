@@ -1,5 +1,5 @@
 mutation deleteItem($projectId: ID!, $itemId: ID!) {
-  deleteProjectNextItem(
+  deleteProjectV2Item(
     input: {
       projectId: $projectId
       itemId: $itemId
