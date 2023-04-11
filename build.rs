@@ -18,7 +18,7 @@ fn main() {
         // "delete_item",
         "list_items",
         "list_fields",
-        // "update_item_field",
+        "update_item_field",
     ] {
         let mut options = GraphQLClientCodegenOptions::new(CodegenMode::Cli);
         options.set_module_visibility(

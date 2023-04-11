@@ -23,7 +23,6 @@ fragment ProjectV2 on ProjectV2Owner {
         ... on ProjectV2IterationField {
           id
           name
-          dataType
           configuration {
             duration
             startDay
@@ -45,7 +44,6 @@ fragment ProjectV2 on ProjectV2Owner {
         ... on ProjectV2SingleSelectField {
           id
           name
-          dataType
           options {
             id
             name

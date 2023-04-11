@@ -1,4 +1,4 @@
-use std::{sync::Mutex, borrow::Cow};
+use std::{borrow::Cow, sync::Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,7 +20,7 @@ struct Field {
 }
 
 enum FieldKind {
-    Normal,
+    Normal(FieldType),
     SingleSelect(Vec<FieldOption>),
     Iteration {
         #[allow(dead_code)]
@@ -30,6 +30,36 @@ enum FieldKind {
         iterations: Vec<FieldIteration>,
         completed_iterations: Vec<FieldIteration>,
     },
+}
+
+#[derive(Debug)]
+#[allow(nonstandard_style, clippy::upper_case_acronyms)]
+enum FieldType {
+    ASSIGNEES,
+    DATE,
+    LABELS,
+    LINKED_PULL_REQUESTS,
+    MILESTONE,
+    NUMBER,
+    REPOSITORY,
+    REVIEWERS,
+    TEXT,
+    TITLE,
+    TRACKED_BY,
+    TRACKS,
+    Other(String),
+}
+
+impl FieldType {
+    fn as_sql_type(&self) -> Option<DataType> {
+        Some(match self {
+            FieldType::DATE => DataType::Date,
+            FieldType::NUMBER => DataType::Float,
+            FieldType::TEXT => DataType::Text,
+            FieldType::TITLE => DataType::Text,
+            _ => None?,
+        })
+    }
 }
 
 struct FieldOption {
@@ -212,6 +242,7 @@ mod generated {
     type Date = String;
     include!(concat!(env!("OUT_DIR"), "/list_fields.rs"));
     include!(concat!(env!("OUT_DIR"), "/list_items.rs"));
+    include!(concat!(env!("OUT_DIR"), "/update_item_field.rs"));
 }
 
 impl ProjectNextStorage {
@@ -253,7 +284,7 @@ impl ProjectNextStorage {
             }
         }
         type Iteration =
-        ProjectV2ProjectV2FieldsNodesOnProjectV2IterationFieldConfigurationIterations;
+            ProjectV2ProjectV2FieldsNodesOnProjectV2IterationFieldConfigurationIterations;
         impl From<Iteration> for FieldIteration {
             fn from(
                 Iteration {
@@ -269,6 +300,28 @@ impl ProjectNextStorage {
                     title,
                     duration,
                     start_date,
+                }
+            }
+        }
+        impl From<ProjectV2FieldType> for FieldType {
+            fn from(value: ProjectV2FieldType) -> Self {
+                match value {
+                    ProjectV2FieldType::ITERATION | ProjectV2FieldType::SINGLE_SELECT => {
+                        unreachable!()
+                    }
+                    ProjectV2FieldType::ASSIGNEES => Self::ASSIGNEES,
+                    ProjectV2FieldType::DATE => Self::DATE,
+                    ProjectV2FieldType::LABELS => Self::LABELS,
+                    ProjectV2FieldType::LINKED_PULL_REQUESTS => Self::LINKED_PULL_REQUESTS,
+                    ProjectV2FieldType::MILESTONE => Self::MILESTONE,
+                    ProjectV2FieldType::NUMBER => Self::NUMBER,
+                    ProjectV2FieldType::REPOSITORY => Self::REPOSITORY,
+                    ProjectV2FieldType::REVIEWERS => Self::REVIEWERS,
+                    ProjectV2FieldType::TEXT => Self::TEXT,
+                    ProjectV2FieldType::TITLE => Self::TITLE,
+                    ProjectV2FieldType::TRACKED_BY => Self::TRACKED_BY,
+                    ProjectV2FieldType::TRACKS => Self::TRACKS,
+                    ProjectV2FieldType::Other(s) => Self::Other(s),
                 }
             }
         }
@@ -309,11 +362,11 @@ impl ProjectNextStorage {
             .filter_map(|node| {
                 use ProjectV2ProjectV2FieldsNodes::*;
                 let field = match node {
-                    ProjectV2Field(ProjectV2ProjectV2FieldsNodesOnProjectV2Field{id, name, ..}) => {
+                    ProjectV2Field(ProjectV2ProjectV2FieldsNodesOnProjectV2Field { id, name, data_type }) => {
                         if reserved_names.iter().any(|&rname| rname == name) {
                             return None;
                         } else {
-                            return Some(Field { id, name, kind: FieldKind::Normal });
+                            return Some(Field { id, name, kind: FieldKind::Normal(data_type.into()) });
                         }
                     },
                     ProjectV2IterationField(ProjectV2ProjectV2FieldsNodesOnProjectV2IterationField {
@@ -346,9 +399,7 @@ impl ProjectNextStorage {
                         ..
                     }) => {
                         let options = options.into_iter().map(Into::into).collect();
-                        Field { id, name, kind: 
-                        FieldKind::SingleSelect(options)
-                        }
+                        Field { id, name, kind: FieldKind::SingleSelect(options) }
                     }
                 };
                 Some(field)
@@ -366,10 +417,11 @@ impl ProjectNextStorage {
         impl IntoQuadRow for ListItemsNodeOnProjectV2ItemsNodesContent {
             fn into_row(self) -> (Value, Value, Value, Value) {
                 match self {
-                    ListItemsNodeOnProjectV2ItemsNodesContent::Issue(issue)
-                    => issue.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::Issue(issue) => issue.into_row(),
                     ListItemsNodeOnProjectV2ItemsNodesContent::PullRequest(pr) => pr.into_row(),
-                    ListItemsNodeOnProjectV2ItemsNodesContent::DraftIssue(draft) => draft.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::DraftIssue(draft) => {
+                        draft.into_row()
+                    }
                 }
             }
         }
@@ -409,20 +461,20 @@ impl ProjectNextStorage {
                 }
             };
         }
-        impl_into_quad_rows!{
+        impl_into_quad_rows! {
             ListItemsNodeOnProjectV2ItemsNodesContentOnIssue,
             ListItemsNodeOnProjectV2ItemsNodesContentOnPullRequest
         }
         impl IntoQuadRow for ListItemsNodeOnProjectV2ItemsNodesContentOnDraftIssue {
             fn into_row(self) -> (Value, Value, Value, Value) {
                 let assignees = self
-                            .assignees
-                            .nodes
-                            .into_iter()
-                            .flatten()
-                            .flatten()
-                            .map(|u| Value::Str(u.login))
-                            .collect();
+                    .assignees
+                    .nodes
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|u| Value::Str(u.login))
+                    .collect();
                 (
                     Value::Null,
                     Value::Null,
@@ -500,19 +552,17 @@ impl ProjectNextStorage {
                     }
                 }
             }
-            fn as_single_select(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldSingleSelectValue> {
+            fn as_single_select(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldSingleSelectValue>{
                 if let Self::ProjectV2ItemFieldSingleSelectValue(v) = self {
                     Some(v)
-                }
-                else {
+                } else {
                     None
                 }
             }
-            fn as_iteration(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldIterationValue> {
+            fn as_iteration(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldIterationValue>{
                 if let Self::ProjectV2ItemFieldIterationValue(v) = self {
                     Some(v)
-                }
-                else {
+                } else {
                     None
                 }
             }
@@ -558,7 +608,12 @@ impl ProjectNextStorage {
             .into_iter()
             .map(|item| {
                 let key = item.id;
-                let title = item.content.as_ref().map(ListItemsNodeOnProjectV2ItemsNodesContent::title).unwrap_or_default().to_string();
+                let title = item
+                    .content
+                    .as_ref()
+                    .map(ListItemsNodeOnProjectV2ItemsNodesContent::title)
+                    .unwrap_or_default()
+                    .to_string();
                 let (repo, issue, assignees, labels) = match item.content {
                     Some(content) => content.into_row(),
                     None => (Value::Null, Value::Null, Value::Null, Value::Null),
@@ -581,15 +636,12 @@ impl ProjectNextStorage {
                         .find(|value| value.field().id() == field.id);
                     match value {
                         Some(value) => match &field.kind {
-                            FieldKind::Normal => match value.representative_str() {
-                                Some(cow) => {
-                                    Value::Str(cow.into_owned())
-                                },
-                                None => {Value::Null},
+                            FieldKind::Normal(..) => match value.representative_str() {
+                                Some(cow) => Value::Str(cow.into_owned()),
+                                None => Value::Null,
                             },
                             FieldKind::SingleSelect(_) => {
-                                if let Some(opt) = value.as_single_select().unwrap().name.as_ref()
-                                {
+                                if let Some(opt) = value.as_single_select().unwrap().name.as_ref() {
                                     Value::Str(opt.to_owned())
                                 } else {
                                     Value::Null
@@ -606,9 +658,8 @@ impl ProjectNextStorage {
                                     iterations.iter().find(|iter| &iter.title == title)
                                 {
                                     Value::Str(iter.title.clone())
-                                } else if let Some(iter) = completed_iterations
-                                    .iter()
-                                    .find(|iter| &iter.id == title)
+                                } else if let Some(iter) =
+                                    completed_iterations.iter().find(|iter| &iter.id == title)
                                 {
                                     Value::Str(iter.title.clone())
                                 } else {
@@ -706,19 +757,8 @@ impl ProjectNextStorage {
         project_id: String,
         item_id: String,
         field_id: String,
-        value: String,
+        value: ProjectV2FieldValue,
     ) -> Result<()> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            project_id: String,
-            item_id: String,
-            field_id: String,
-            value: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Response {}
         let query = include_str!("./update_item_field.graphql");
         let variables = Variables {
             project_id,
@@ -726,7 +766,8 @@ impl ProjectNextStorage {
             field_id,
             value,
         };
-        let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
+        let resp: GraphQLResponse<generated::update_item_field::ResponseData> =
+            gh::graphql(query, &variables)?;
         if !resp.errors.is_empty() {
             return Err(anyhow::anyhow!("Error: {:?}", resp.errors));
         }
@@ -793,6 +834,30 @@ impl Store<String> for ProjectNextStorage {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Variables {
+    pub project_id: String,
+    pub item_id: String,
+    pub field_id: String,
+    pub value: ProjectV2FieldValue,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectV2FieldValue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iteration_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    number: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    single_select_option_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
 #[async_trait(?Send)]
 impl StoreMut<String> for ProjectNextStorage {
     async fn insert_schema(self, _schema: &Schema) -> gluesql::result::MutResult<Self, ()> {
@@ -854,28 +919,66 @@ impl StoreMut<String> for ProjectNextStorage {
                     if new_value == org_value {
                         continue;
                     }
-                    let new_value_str = match new_value {
-                        Value::Str(s) => Some(s.to_string()),
-                        Value::Null => None,
-                        _ => {
-                            return Err((
-                                self,
-                                GlueSQLError::Value(ValueError::IncompatibleDataType {
-                                    data_type: DataType::Text,
-                                    value: new_value.clone(),
-                                }),
-                            ));
-                        }
-                    };
                     let field = &cache.fields[field_idx];
-                    let new_value_gql = if let Some(new_value_str) = new_value_str {
+                    let new_value_input = if !matches!(new_value, Value::Null) {
                         match &field.kind {
-                            FieldKind::Normal => new_value_str,
+                            FieldKind::Normal(ty) => {
+                                let Some(ty) = ty.as_sql_type() else {
+                                    return Err((
+                                        self,
+                                        GlueSQLError::StorageMsg(format!("readonly column: {:?}", ty)),
+                                    ));
+                                };
+
+                                fn into_update_input(
+                                    ty: &DataType,
+                                    new_value: &Value,
+                                ) -> Option<ProjectV2FieldValue> {
+                                    Some(match ty {
+                                        DataType::Date => ProjectV2FieldValue {
+                                            date: Some(match new_value {
+                                                Value::Str(s) => s.to_owned(),
+                                                Value::Date(d) => d.format("%Y-%m-%d").to_string(),
+                                                _ => None?,
+                                            }),
+                                            ..Default::default()
+                                        },
+                                        DataType::Float => ProjectV2FieldValue {
+                                            number: new_value
+                                                .cast(&DataType::Float)
+                                                .ok()
+                                                .and_then(|v| (&v).try_into().ok()),
+                                            ..Default::default()
+                                        },
+                                        DataType::Text => ProjectV2FieldValue {
+                                            text: new_value
+                                                .cast(&DataType::Text)
+                                                .ok()
+                                                .map(|v| v.into()),
+                                            ..Default::default()
+                                        },
+                                        _ => None?,
+                                    })
+                                }
+
+                                let Some(new_value_input) = into_update_input(&ty, new_value) else {
+                                    return Err((
+                                        self,
+                                        GlueSQLError::Value(ValueError::IncompatibleDataType {
+                                            data_type: ty,
+                                            value: new_value.clone(),
+                                        }),
+                                    ));
+                                };
+                                new_value_input
+                            }
                             FieldKind::SingleSelect(options) => {
-                                if let Some(opt) =
-                                    options.iter().find(|opt| opt.name == new_value_str)
-                                {
-                                    opt.id.clone()
+                                let new_str: String = new_value.into();
+                                if let Some(opt) = options.iter().find(|opt| opt.name == new_str) {
+                                    ProjectV2FieldValue {
+                                        single_select_option_id: Some(opt.id.to_owned()),
+                                        ..Default::default()
+                                    }
                                 } else {
                                     return Err((
                                         self,
@@ -883,36 +986,22 @@ impl StoreMut<String> for ProjectNextStorage {
                                     ));
                                 }
                             }
-                            FieldKind::Iteration {
-                                iterations,
-                                completed_iterations,
-                                ..
-                            } => {
-                                if let Some(opt) =
-                                    iterations.iter().find(|it| it.title == new_value_str)
-                                {
-                                    opt.id.clone()
-                                } else if let Some(it) = completed_iterations
-                                    .iter()
-                                    .find(|opt| opt.title == new_value_str)
-                                {
-                                    it.id.clone()
-                                } else {
-                                    return Err((
-                                        self,
-                                        GlueSQLError::Value(ValueError::ImpossibleCast),
-                                    ));
+                            FieldKind::Iteration { .. } => {
+                                let new_str: String = new_value.into();
+                                ProjectV2FieldValue {
+                                    iteration_id: Some(new_str.to_owned()),
+                                    ..Default::default()
                                 }
                             }
                         }
                     } else {
-                        String::new()
+                        Default::default()
                     };
                     if let Err(e) = self.update_item_field(
                         cache.project_id.clone(),
                         item_id.clone(),
                         field.id.clone(),
-                        new_value_gql,
+                        new_value_input,
                     ) {
                         return Err((self, GlueSQLError::Storage(e.into())));
                     }
