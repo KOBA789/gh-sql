@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Mutex};
+use std::sync::Mutex;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -509,46 +509,46 @@ impl ProjectNextStorage {
                     ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldUserValue(i) => &i.field,
                 }
             }
-            fn representative_str(&self) -> Option<Cow<'_, String>> {
+            fn as_sql_value(&self) -> Option<Value> {
                 match self {
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldDateValue(f) => f.date.as_ref().map(Cow::Borrowed),
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldIterationValue(f) => Some(Cow::Borrowed(&f.title)),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldDateValue(f) => f.date.as_ref().map(|s| Value::Str(s.to_owned())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldIterationValue(..) => unreachable!(),
                     ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldLabelValue(f) => {
                         let l = f.labels.as_ref()?;
-                        let names: Vec<&str> = l.nodes.iter().flatten().flatten().map(|ls| ls.name.as_str()).collect();
+                        let names: Vec<_> = l.nodes.iter().flatten().flatten().map(|ls| Value::Str(ls.name.to_owned())).collect();
                         if names.is_empty() {
                             return None;
                         }
-                        Some(Cow::Owned(names.join(", ")))
+                        Some(Value::List(names))
                     }
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldMilestoneValue(f) => f.milestone.as_ref().map(|m| Cow::Borrowed(&m.title)),
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldNumberValue(f) => f.number.map(|m| Cow::Owned(m.to_string())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldMilestoneValue(f) => f.milestone.as_ref().map(|m| Value::Str(m.title.to_owned())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldNumberValue(f) => f.number.map(Value::F64),
                     ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldPullRequestValue(f) => {
                         let l = f.pull_requests.as_ref()?;
-                        let titles: Vec<&str> = l.nodes.iter().flatten().flatten().map(|ls| ls.title.as_str()).collect();
+                        let titles: Vec<_> = l.nodes.iter().flatten().flatten().map(|ls| Value::Str(ls.title.to_owned())).collect();
                         if titles.is_empty() {
                             return None;
                         }
-                        Some(Cow::Owned(titles.join(", ")))
+                        Some(Value::List(titles))
                     }
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldRepositoryValue(f) => f.repository.as_ref().map(|re| Cow::Borrowed(&re.name)),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldRepositoryValue(f) => f.repository.as_ref().map(|re| Value::Str(re.name.to_owned())),
                     ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldReviewerValue(f) => {
                         let l = f.reviewers.as_ref()?;
-                        let titles: Vec<&str> = l.nodes.iter().flatten().flatten().flat_map(|ls| ls.name()).collect();
-                        if titles.is_empty() {
+                        let logins: Vec<_> = l.nodes.iter().flatten().flatten().flat_map(|ls| ls.name()).map(|s| Value::Str(s.to_owned())).collect();
+                        if logins.is_empty() {
                             return None;
                         }
-                        Some(Cow::Owned(titles.join(", ")))
+                        Some(Value::List(logins))
                     }
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldSingleSelectValue(f) => f.name.as_ref().map(Cow::Borrowed),
-                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldTextValue(f) => f.text.as_ref().map(Cow::Borrowed),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldSingleSelectValue(..) => unreachable!(),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldTextValue(f) => f.text.as_ref().map(|s| Value::Str(s.to_owned())),
                     ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldUserValue(f) => {
                         let l = f.users.as_ref()?;
-                        let titles: Vec<&str> = l.nodes.iter().flatten().flatten().map(|ls| ls.login.as_str()).collect();
-                        if titles.is_empty() {
+                        let logins: Vec<_> = l.nodes.iter().flatten().flatten().map(|ls| Value::Str(ls.login.to_owned())).collect();
+                        if logins.is_empty() {
                             return None;
                         }
-                        Some(Cow::Owned(titles.join(", ")))
+                        Some(Value::List(logins))
                     }
                 }
             }
@@ -636,8 +636,8 @@ impl ProjectNextStorage {
                         .find(|value| value.field().id() == field.id);
                     match value {
                         Some(value) => match &field.kind {
-                            FieldKind::Normal(..) => match value.representative_str() {
-                                Some(cow) => Value::Str(cow.into_owned()),
+                            FieldKind::Normal(..) => match value.as_sql_value() {
+                                Some(v) => v,
                                 None => Value::Null,
                             },
                             FieldKind::SingleSelect(_) => {
