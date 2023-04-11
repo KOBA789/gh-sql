@@ -654,12 +654,10 @@ impl ProjectNextStorage {
                             } => {
                                 let value = value.as_iteration().unwrap();
                                 let title = &value.title;
-                                if let Some(iter) =
-                                    iterations.iter().find(|iter| &iter.title == title)
-                                {
-                                    Value::Str(iter.title.clone())
-                                } else if let Some(iter) =
-                                    completed_iterations.iter().find(|iter| &iter.id == title)
+                                if let Some(iter) = iterations
+                                    .iter()
+                                    .chain(completed_iterations.iter())
+                                    .find(|iter| &iter.title == title)
                                 {
                                     Value::Str(iter.title.clone())
                                 } else {
