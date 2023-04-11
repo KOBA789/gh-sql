@@ -12,8 +12,17 @@ use graphql_client_codegen::{
 use syn::Token;
 
 fn main() {
-    // download it from https://docs.github.com/public/schema.docs.graphql
-    let schema_path = "schema.docs.graphql".to_string();
+    let schema_path = format!("{}/schema.docs.graphql", env::var("OUT_DIR").unwrap());
+    let schema_path = Path::new(&schema_path);
+    if !schema_path.exists() {
+        File::create(schema_path).unwrap();
+        let body = reqwest::blocking::get("https://docs.github.com/public/schema.docs.graphql")
+            .unwrap()
+            .text()
+            .unwrap();
+        std::fs::write(schema_path, body).unwrap();
+    }
+
     for file_name in [
         "delete_item",
         "list_items",
@@ -29,7 +38,7 @@ fn main() {
         );
         let gen = generate_module_token_stream(
             format!("src/{file_name}.graphql").into(),
-            Path::new(&schema_path),
+            Path::new(schema_path),
             options,
         )
         .unwrap();
@@ -45,9 +54,9 @@ fn main() {
             .arg(dest_file_path)
             .output()
             .unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
         let status = output.status;
         if !status.success() {
+            io::stderr().write_all(&output.stderr).unwrap();
             panic!("rustfmt error: {status}")
         }
     }
