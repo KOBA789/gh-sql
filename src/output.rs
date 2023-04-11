@@ -63,7 +63,13 @@ fn print_as_table<W: io::Write>(
     });
     w.write_all(b"| ")?;
     for (max_width, label) in column_widths.iter().zip(labels) {
-        write!(w, "{}{:pad$} | ", label, "", pad = max_width - label.width())?;
+        write!(
+            w,
+            "{}{:pad$} | ",
+            label,
+            "",
+            pad = max_width - label.width()
+        )?;
     }
     w.write_all(b"\n")?;
     for row in rows {
