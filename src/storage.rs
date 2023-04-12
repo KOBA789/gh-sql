@@ -979,11 +979,26 @@ impl StoreMut<String> for ProjectNextStorage {
                                     ));
                                 }
                             }
-                            FieldKind::Iteration { .. } => {
+                            FieldKind::Iteration {
+                                iterations,
+                                completed_iterations,
+                                ..
+                            } => {
                                 let new_str: String = new_value.into();
-                                ProjectV2FieldValue {
-                                    iteration_id: Some(new_str.to_owned()),
-                                    ..Default::default()
+                                if let Some(opt) = iterations
+                                    .iter()
+                                    .chain(completed_iterations.iter())
+                                    .find(|opt| opt.title == new_str)
+                                {
+                                    ProjectV2FieldValue {
+                                        iteration_id: Some(opt.id.to_owned()),
+                                        ..Default::default()
+                                    }
+                                } else {
+                                    return Err((
+                                        self,
+                                        GlueSQLError::Value(ValueError::ImpossibleCast),
+                                    ));
                                 }
                             }
                         }
