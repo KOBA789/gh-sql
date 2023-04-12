@@ -13,15 +13,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::gh::{self, GraphQLResponse};
 
-fn deserialize_json_string<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::de::Deserializer<'de>,
-    T: serde::de::DeserializeOwned,
-{
-    let s: String = serde::de::Deserialize::deserialize(deserializer)?;
-    serde_json::from_str(&s).map_err(serde::de::Error::custom)
-}
-
 struct Field {
     id: String,
     name: String,
@@ -29,16 +20,46 @@ struct Field {
 }
 
 enum FieldKind {
-    Normal,
-    Option(Vec<FieldOption>),
+    Normal(FieldType),
+    SingleSelect(Vec<FieldOption>),
     Iteration {
         #[allow(dead_code)]
-        duration: u32,
+        duration: i64,
         #[allow(dead_code)]
-        start_day: u32,
+        start_day: i64,
         iterations: Vec<FieldIteration>,
         completed_iterations: Vec<FieldIteration>,
     },
+}
+
+#[derive(Debug)]
+#[allow(nonstandard_style, clippy::upper_case_acronyms)]
+enum FieldType {
+    ASSIGNEES,
+    DATE,
+    LABELS,
+    LINKED_PULL_REQUESTS,
+    MILESTONE,
+    NUMBER,
+    REPOSITORY,
+    REVIEWERS,
+    TEXT,
+    TITLE,
+    TRACKED_BY,
+    TRACKS,
+    Other(String),
+}
+
+impl FieldType {
+    fn as_sql_type(&self) -> Option<DataType> {
+        Some(match self {
+            FieldType::DATE => DataType::Date,
+            FieldType::NUMBER => DataType::Float,
+            FieldType::TEXT => DataType::Text,
+            FieldType::TITLE => DataType::Text,
+            _ => None?,
+        })
+    }
 }
 
 struct FieldOption {
@@ -49,13 +70,13 @@ struct FieldOption {
 struct FieldIteration {
     id: String,
     title: String,
-    duration: u32,
+    duration: i64,
     start_date: String,
 }
 
 pub struct ProjectNextStorage {
     owner: String,
-    project_number: u32,
+    project_number: i64,
     cache: Mutex<Option<Cache>>,
 }
 
@@ -148,7 +169,7 @@ impl Cache {
                                 Value::Str(id.to_string()),
                                 Value::Str(title.to_string()),
                                 Value::Str(start_date.to_string()),
-                                Value::I64(*duration as i64),
+                                Value::I64(*duration),
                                 Value::Bool(false),
                             ]);
                             (key, row)
@@ -167,7 +188,7 @@ impl Cache {
                                 Value::Str(id.to_string()),
                                 Value::Str(title.to_string()),
                                 Value::Str(start_date.to_string()),
-                                Value::I64(*duration as i64),
+                                Value::I64(*duration),
                                 Value::Bool(true),
                             ]);
                             (key, row)
@@ -192,7 +213,7 @@ impl Cache {
             .filter_map(|field| {
                 if let Field {
                     id: field_id,
-                    kind: FieldKind::Option(options),
+                    kind: FieldKind::SingleSelect(options),
                     ..
                 } = field
                 {
@@ -216,8 +237,17 @@ impl Cache {
     }
 }
 
+#[allow(warnings)]
+mod generated {
+    type Date = String;
+    include!(concat!(env!("OUT_DIR"), "/list_fields.rs"));
+    include!(concat!(env!("OUT_DIR"), "/list_items.rs"));
+    include!(concat!(env!("OUT_DIR"), "/update_item_field.rs"));
+    include!(concat!(env!("OUT_DIR"), "/delete_item.rs"));
+}
+
 impl ProjectNextStorage {
-    pub fn new(owner: String, project_number: u32) -> Result<Self> {
+    pub fn new(owner: String, project_number: i64) -> Result<Self> {
         Ok(Self {
             owner,
             project_number,
@@ -226,81 +256,25 @@ impl ProjectNextStorage {
     }
 
     fn list_fields(&self) -> Result<(String, Vec<Field>)> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            owner: String,
-            project_number: u32,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Response {
-            organization: Option<Organization>,
-            user: Option<Organization>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Organization {
-            project_next: ProjectNext,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNext {
-            id: String,
-            fields: FieldConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct FieldConnection {
-            nodes: Vec<FieldNode>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct FieldNode {
-            id: String,
-            name: String,
-            #[serde(default)]
-            #[serde(deserialize_with = "deserialize_json_string")]
-            settings: Option<FieldSettings>,
-        }
-        #[derive(Deserialize)]
-        struct FieldSettings {
-            options: Option<Vec<FieldSettingsOption>>,
-            configuration: Option<FieldSettingsConfiguration>,
-        }
-        #[derive(Deserialize)]
-        struct FieldSettingsOption {
-            id: String,
-            name: String,
-        }
-        #[derive(Deserialize)]
-        struct FieldSettingsConfiguration {
-            duration: u32,
-            start_day: u32,
-            iterations: Vec<FieldSettingsConfigurationIteration>,
-            completed_iterations: Vec<FieldSettingsConfigurationIteration>,
-        }
-        #[derive(Deserialize)]
-        struct FieldSettingsConfigurationIteration {
-            id: String,
-            title: String,
-            duration: u32,
-            start_date: String,
-        }
-        impl From<FieldSettingsOption> for FieldOption {
-            fn from(FieldSettingsOption { id, name }: FieldSettingsOption) -> Self {
+        use generated::list_fields::*;
+        type SingleSelectFieldOption =
+            ProjectV2ProjectV2FieldsNodesOnProjectV2SingleSelectFieldOptions;
+        impl From<SingleSelectFieldOption> for FieldOption {
+            fn from(SingleSelectFieldOption { id, name }: SingleSelectFieldOption) -> Self {
                 Self { id, name }
             }
         }
-        impl From<FieldSettingsConfigurationIteration> for FieldIteration {
+        type CompletedIteration =
+            ProjectV2ProjectV2FieldsNodesOnProjectV2IterationFieldConfigurationCompletedIterations;
+        impl From<CompletedIteration> for FieldIteration {
             fn from(
-                FieldSettingsConfigurationIteration {
+                CompletedIteration {
                     id,
                     title,
                     duration,
                     start_date,
                     ..
-                }: FieldSettingsConfigurationIteration,
+                }: CompletedIteration,
             ) -> Self {
                 Self {
                     id,
@@ -310,17 +284,59 @@ impl ProjectNextStorage {
                 }
             }
         }
+        type Iteration =
+            ProjectV2ProjectV2FieldsNodesOnProjectV2IterationFieldConfigurationIterations;
+        impl From<Iteration> for FieldIteration {
+            fn from(
+                Iteration {
+                    id,
+                    title,
+                    duration,
+                    start_date,
+                    ..
+                }: Iteration,
+            ) -> Self {
+                Self {
+                    id,
+                    title,
+                    duration,
+                    start_date,
+                }
+            }
+        }
+        impl From<ProjectV2FieldType> for FieldType {
+            fn from(value: ProjectV2FieldType) -> Self {
+                match value {
+                    ProjectV2FieldType::ITERATION | ProjectV2FieldType::SINGLE_SELECT => {
+                        unreachable!()
+                    }
+                    ProjectV2FieldType::ASSIGNEES => Self::ASSIGNEES,
+                    ProjectV2FieldType::DATE => Self::DATE,
+                    ProjectV2FieldType::LABELS => Self::LABELS,
+                    ProjectV2FieldType::LINKED_PULL_REQUESTS => Self::LINKED_PULL_REQUESTS,
+                    ProjectV2FieldType::MILESTONE => Self::MILESTONE,
+                    ProjectV2FieldType::NUMBER => Self::NUMBER,
+                    ProjectV2FieldType::REPOSITORY => Self::REPOSITORY,
+                    ProjectV2FieldType::REVIEWERS => Self::REVIEWERS,
+                    ProjectV2FieldType::TEXT => Self::TEXT,
+                    ProjectV2FieldType::TITLE => Self::TITLE,
+                    ProjectV2FieldType::TRACKED_BY => Self::TRACKED_BY,
+                    ProjectV2FieldType::TRACKS => Self::TRACKS,
+                    ProjectV2FieldType::Other(s) => Self::Other(s),
+                }
+            }
+        }
         let query = include_str!("list_fields.graphql");
         let variables = Variables {
             owner: self.owner.clone(),
             project_number: self.project_number,
         };
-        let resp: gh::GraphQLResponse<Response> = gh::graphql(query, &variables)?;
+        let resp: gh::GraphQLResponse<ResponseData> = gh::graphql(query, &variables)?;
         let project_next = resp
             .data
             .organization
-            .map(|org| org.project_next)
-            .or_else(|| resp.data.user.map(|user| user.project_next));
+            .and_then(|org| org.project_v2)
+            .or_else(|| resp.data.user.and_then(|user| user.project_v2));
         let project_next = if let Some(project_next) = project_next {
             project_next
         } else {
@@ -342,185 +358,122 @@ impl ProjectNextStorage {
         ];
         let fields = field_nodes
             .into_iter()
-            .filter(|field| reserved_names.iter().all(|&name| name != field.name))
-            .map(|FieldNode { id, name, settings }| {
-                let kind = if let Some(settings) = settings {
-                    if let Some(options) = settings.options {
-                        let options = options.into_iter().map(Into::into).collect();
-                        FieldKind::Option(options)
-                    } else if let Some(FieldSettingsConfiguration {
-                        duration,
+            .flatten()
+            .flatten()
+            .filter_map(|node| {
+                use ProjectV2ProjectV2FieldsNodes::*;
+                let field = match node {
+                    ProjectV2Field(ProjectV2ProjectV2FieldsNodesOnProjectV2Field { id, name, data_type }) => {
+                        if reserved_names.iter().any(|&rname| rname == name) {
+                            return None;
+                        } else {
+                            return Some(Field { id, name, kind: FieldKind::Normal(data_type.into()) });
+                        }
+                    },
+                    ProjectV2IterationField(ProjectV2ProjectV2FieldsNodesOnProjectV2IterationField {
+                        id,
+                        name,
+                        configuration: ProjectV2ProjectV2FieldsNodesOnProjectV2IterationFieldConfiguration {
+                            duration,
                         start_day,
                         iterations,
                         completed_iterations,
-                    }) = settings.configuration
-                    {
-                        FieldKind::Iteration {
-                            duration,
-                            start_day,
-                            iterations: iterations.into_iter().map(Into::into).collect(),
-                            completed_iterations: completed_iterations
-                                .into_iter()
-                                .map(Into::into)
-                                .collect(),
+                        },
+                        ..
+                    }) => {
+                        Field { id, name, kind:
+                            FieldKind::Iteration {
+                                duration,
+                                start_day,
+                                iterations: iterations.into_iter().map(Into::into).collect(),
+                                completed_iterations: completed_iterations
+                                    .into_iter()
+                                    .map(Into::into)
+                                    .collect(),
+                            }
                         }
-                    } else {
-                        FieldKind::Normal
+                    },
+                    ProjectV2SingleSelectField(ProjectV2ProjectV2FieldsNodesOnProjectV2SingleSelectField {
+                        id,
+                        name,
+                        options,
+                        ..
+                    }) => {
+                        let options = options.into_iter().map(Into::into).collect();
+                        Field { id, name, kind: FieldKind::SingleSelect(options) }
                     }
-                } else {
-                    FieldKind::Normal
                 };
-                Field { id, name, kind }
+                Some(field)
             })
             .collect();
         Ok((project_id, fields))
     }
 
     fn scan_items(&self, project_id: String, fields: &[Field]) -> Result<Vec<(String, Row)>> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            project_id: String,
-            after: Option<String>,
+        use generated::list_items::*;
+        trait IntoQuadRow {
+            /// repo, issue number, assignees, labels
+            fn into_row(self) -> (Value, Value, Value, Value);
         }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Response {
-            node: ProjectNext,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNext {
-            items: ProjectNextItemConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemConnection {
-            page_info: PageInfo,
-            nodes: Vec<ProjectNextItem>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItem {
-            id: String,
-            title: String,
-            content: Option<ProjectNextItemContent>,
-            field_values: ProjectNextItemFieldValueConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(tag = "__typename")]
-        enum ProjectNextItemContent {
-            Issue(ProjectNextItemContentIssue),
-            PullRequest(ProjectNextItemContentIssue),
-            DraftIssue(ProjectNextItemContentDraftIssue),
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemContentIssue {
-            repository: Repository,
-            number: u64,
-            labels: LabelConnection,
-            assignees: UserConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemContentDraftIssue {
-            assignees: UserConnection,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct LabelConnection {
-            nodes: Vec<Label>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Label {
-            name: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct UserConnection {
-            nodes: Vec<User>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct User {
-            login: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Repository {
-            owner: RepositoryOwner,
-            name: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RepositoryOwner {
-            login: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemFieldValueConnection {
-            nodes: Vec<ProjectNextItemFieldValue>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct PageInfo {
-            has_next_page: bool,
-            end_cursor: Option<String>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextItemFieldValue {
-            project_field: ProjectNextField,
-            value: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct ProjectNextField {
-            id: String,
-        }
-        impl ProjectNextItemContent {
+        impl IntoQuadRow for ListItemsNodeOnProjectV2ItemsNodesContent {
             fn into_row(self) -> (Value, Value, Value, Value) {
                 match self {
-                    ProjectNextItemContent::Issue(issue)
-                    | ProjectNextItemContent::PullRequest(issue) => issue.into_row(),
-                    ProjectNextItemContent::DraftIssue(draft) => draft.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::Issue(issue) => issue.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::PullRequest(pr) => pr.into_row(),
+                    ListItemsNodeOnProjectV2ItemsNodesContent::DraftIssue(draft) => {
+                        draft.into_row()
+                    }
                 }
             }
         }
-        impl ProjectNextItemContentIssue {
-            fn into_row(self) -> (Value, Value, Value, Value) {
-                let repo = format!(
-                    "{}/{}",
-                    self.repository.owner.login, self.repository.name
-                );
-                let assignees = self
-                    .assignees
-                    .nodes
-                    .into_iter()
-                    .map(|u| Value::Str(u.login))
-                    .collect();
-                let labels = self
-                    .labels
-                    .nodes
-                    .into_iter()
-                    .map(|l| Value::Str(l.name))
-                    .collect();
-                (
-                    Value::Str(repo),
-                    Value::I64(self.number as i64),
-                    Value::List(assignees),
-                    Value::List(labels),
-                )
-            }
+        macro_rules! impl_into_quad_rows {
+            ($($t:tt),*) => {
+                $(impl_into_quad_row!($t));*
+            };
         }
-        impl ProjectNextItemContentDraftIssue {
+        macro_rules! impl_into_quad_row {
+            ($t:ident) => {
+                impl IntoQuadRow for $t {
+                    fn into_row(self) -> (Value, Value, Value, Value) {
+                        let repo = self.repository.name_with_owner;
+                        let assignees = self
+                            .assignees
+                            .nodes
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .map(|u| Value::Str(u.login))
+                            .collect();
+                        let labels = self
+                            .labels
+                            .into_iter()
+                            .flat_map(|l| l.nodes)
+                            .flatten()
+                            .flatten()
+                            .map(|l| Value::Str(l.name))
+                            .collect();
+                        (
+                            Value::Str(repo),
+                            Value::I64(self.number as i64),
+                            Value::List(assignees),
+                            Value::List(labels),
+                        )
+                    }
+                }
+            };
+        }
+        impl_into_quad_rows! {
+            ListItemsNodeOnProjectV2ItemsNodesContentOnIssue,
+            ListItemsNodeOnProjectV2ItemsNodesContentOnPullRequest
+        }
+        impl IntoQuadRow for ListItemsNodeOnProjectV2ItemsNodesContentOnDraftIssue {
             fn into_row(self) -> (Value, Value, Value, Value) {
                 let assignees = self
                     .assignees
                     .nodes
                     .into_iter()
+                    .flatten()
+                    .flatten()
                     .map(|u| Value::Str(u.login))
                     .collect();
                 (
@@ -532,6 +485,108 @@ impl ProjectNextStorage {
             }
         }
 
+        impl ListItemsNodeOnProjectV2ItemsNodesContent {
+            fn title(&self) -> &str {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesContent::DraftIssue(d) => &d.title,
+                    ListItemsNodeOnProjectV2ItemsNodesContent::Issue(i) => &i.title,
+                    ListItemsNodeOnProjectV2ItemsNodesContent::PullRequest(p) => &p.title,
+                }
+            }
+        }
+        impl ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes {
+            fn field(&self) -> &FieldFragment {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldDateValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldIterationValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldLabelValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldMilestoneValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldNumberValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldPullRequestValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldRepositoryValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldReviewerValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldSingleSelectValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldTextValue(i) => &i.field,
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldUserValue(i) => &i.field,
+                }
+            }
+            fn as_sql_value(&self) -> Option<Value> {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldDateValue(f) => f.date.as_ref().map(|s| Value::Str(s.to_owned())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldIterationValue(..) => unreachable!(),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldLabelValue(f) => {
+                        let l = f.labels.as_ref()?;
+                        let names: Vec<_> = l.nodes.iter().flatten().flatten().map(|ls| Value::Str(ls.name.to_owned())).collect();
+                        if names.is_empty() {
+                            return None;
+                        }
+                        Some(Value::List(names))
+                    }
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldMilestoneValue(f) => f.milestone.as_ref().map(|m| Value::Str(m.title.to_owned())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldNumberValue(f) => f.number.map(Value::F64),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldPullRequestValue(f) => {
+                        let l = f.pull_requests.as_ref()?;
+                        let titles: Vec<_> = l.nodes.iter().flatten().flatten().map(|ls| Value::Str(ls.title.to_owned())).collect();
+                        if titles.is_empty() {
+                            return None;
+                        }
+                        Some(Value::List(titles))
+                    }
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldRepositoryValue(f) => f.repository.as_ref().map(|re| Value::Str(re.name.to_owned())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldReviewerValue(f) => {
+                        let l = f.reviewers.as_ref()?;
+                        let logins: Vec<_> = l.nodes.iter().flatten().flatten().flat_map(|ls| ls.name()).map(|s| Value::Str(s.to_owned())).collect();
+                        if logins.is_empty() {
+                            return None;
+                        }
+                        Some(Value::List(logins))
+                    }
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldSingleSelectValue(..) => unreachable!(),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldTextValue(f) => f.text.as_ref().map(|s| Value::Str(s.to_owned())),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodes::ProjectV2ItemFieldUserValue(f) => {
+                        let l = f.users.as_ref()?;
+                        let logins: Vec<_> = l.nodes.iter().flatten().flatten().map(|ls| Value::Str(ls.login.to_owned())).collect();
+                        if logins.is_empty() {
+                            return None;
+                        }
+                        Some(Value::List(logins))
+                    }
+                }
+            }
+            fn as_single_select(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldSingleSelectValue>{
+                if let Self::ProjectV2ItemFieldSingleSelectValue(v) = self {
+                    Some(v)
+                } else {
+                    None
+                }
+            }
+            fn as_iteration(&self) -> Option<&ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldIterationValue>{
+                if let Self::ProjectV2ItemFieldIterationValue(v) = self {
+                    Some(v)
+                } else {
+                    None
+                }
+            }
+        }
+        impl FieldFragment {
+            fn id(&self) -> &str {
+                match self {
+                    FieldFragment::ProjectV2Field(i) => &i.id,
+                    FieldFragment::ProjectV2IterationField(i) => &i.id,
+                    FieldFragment::ProjectV2SingleSelectField(i) => &i.id,
+                }
+            }
+        }
+        impl ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldReviewerValueReviewersNodes {
+            fn name(&self) -> Option<&str> {
+                match self {
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldReviewerValueReviewersNodes::Team(t) => Some(&t.name),
+                    ListItemsNodeOnProjectV2ItemsNodesFieldValuesNodesOnProjectV2ItemFieldReviewerValueReviewersNodes::User(u) => Some(&u.login),
+                    _ => None,
+                }
+            }
+        }
+
         let query = include_str!("list_items.graphql");
         let mut items = vec![];
         let mut after = None;
@@ -540,9 +595,9 @@ impl ProjectNextStorage {
                 project_id: project_id.clone(),
                 after: after.clone(),
             };
-            let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
-            let ProjectNextItemConnection { page_info, nodes } = resp.data.node.items;
-            items.extend(nodes);
+            let resp: GraphQLResponse<ResponseData> = gh::graphql(query, &variables)?;
+            let Some(ListItemsNode::ProjectV2(ListItemsNodeOnProjectV2 { items: ListItemsNodeOnProjectV2Items { page_info, nodes } })) = resp.data.node else { unreachable!("the id can only be for projectV2") };
+            items.extend(nodes.into_iter().flatten().flatten());
             if let Some(end_cursor) = page_info.end_cursor {
                 after = Some(end_cursor);
                 page_info.has_next_page
@@ -554,6 +609,12 @@ impl ProjectNextStorage {
             .into_iter()
             .map(|item| {
                 let key = item.id;
+                let title = item
+                    .content
+                    .as_ref()
+                    .map(ListItemsNodeOnProjectV2ItemsNodesContent::title)
+                    .unwrap_or_default()
+                    .to_string();
                 let (repo, issue, assignees, labels) = match item.content {
                     Some(content) => content.into_row(),
                     None => (Value::Null, Value::Null, Value::Null, Value::Null),
@@ -562,7 +623,7 @@ impl ProjectNextStorage {
                     Value::Str(key.clone()),
                     repo,
                     issue,
-                    Value::Str(item.title),
+                    Value::Str(title),
                     assignees,
                     labels,
                 ];
@@ -571,16 +632,20 @@ impl ProjectNextStorage {
                         .field_values
                         .nodes
                         .iter()
-                        .find(|value| value.project_field.id == field.id);
+                        .flatten()
+                        .flatten()
+                        .find(|value| value.field().id() == field.id);
                     match value {
                         Some(value) => match &field.kind {
-                            FieldKind::Normal => Value::Str(value.value.clone()),
-                            FieldKind::Option(options) => {
-                                if let Some(opt) = options.iter().find(|opt| opt.id == value.value)
-                                {
-                                    Value::Str(opt.name.clone())
+                            FieldKind::Normal(..) => match value.as_sql_value() {
+                                Some(v) => v,
+                                None => Value::Null,
+                            },
+                            FieldKind::SingleSelect(_) => {
+                                if let Some(opt) = value.as_single_select().unwrap().name.as_ref() {
+                                    Value::Str(opt.to_owned())
                                 } else {
-                                    Value::Str("Unknown".to_string())
+                                    Value::Null
                                 }
                             }
                             FieldKind::Iteration {
@@ -588,13 +653,12 @@ impl ProjectNextStorage {
                                 completed_iterations,
                                 ..
                             } => {
-                                if let Some(iter) =
-                                    iterations.iter().find(|iter| iter.id == value.value)
-                                {
-                                    Value::Str(iter.title.clone())
-                                } else if let Some(iter) = completed_iterations
+                                let value = value.as_iteration().unwrap();
+                                let title = &value.title;
+                                if let Some(iter) = iterations
                                     .iter()
-                                    .find(|iter| iter.id == value.value)
+                                    .chain(completed_iterations.iter())
+                                    .find(|iter| &iter.title == title)
                                 {
                                     Value::Str(iter.title.clone())
                                 } else {
@@ -692,19 +756,8 @@ impl ProjectNextStorage {
         project_id: String,
         item_id: String,
         field_id: String,
-        value: String,
+        value: ProjectV2FieldValue,
     ) -> Result<()> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            project_id: String,
-            item_id: String,
-            field_id: String,
-            value: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Response {}
         let query = include_str!("./update_item_field.graphql");
         let variables = Variables {
             project_id,
@@ -712,7 +765,8 @@ impl ProjectNextStorage {
             field_id,
             value,
         };
-        let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
+        let resp: GraphQLResponse<generated::update_item_field::ResponseData> =
+            gh::graphql(query, &variables)?;
         if !resp.errors.is_empty() {
             return Err(anyhow::anyhow!("Error: {:?}", resp.errors));
         }
@@ -720,14 +774,8 @@ impl ProjectNextStorage {
     }
 
     fn delete_item_field(&self, project_id: String, item_id: String) -> Result<()> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Variables {
-            project_id: String,
-            item_id: String,
-        }
+        use generated::delete_item::*;
         #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
         struct Response {}
         let query = include_str!("./delete_item.graphql");
         let variables = Variables {
@@ -777,6 +825,30 @@ impl Store<String> for ProjectNextStorage {
             _ => unreachable!(),
         }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Variables {
+    pub project_id: String,
+    pub item_id: String,
+    pub field_id: String,
+    pub value: ProjectV2FieldValue,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectV2FieldValue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iteration_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    number: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    single_select_option_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
 }
 
 #[async_trait(?Send)]
@@ -840,28 +912,66 @@ impl StoreMut<String> for ProjectNextStorage {
                     if new_value == org_value {
                         continue;
                     }
-                    let new_value_str = match new_value {
-                        Value::Str(s) => Some(s.to_string()),
-                        Value::Null => None,
-                        _ => {
-                            return Err((
-                                self,
-                                GlueSQLError::Value(ValueError::IncompatibleDataType {
-                                    data_type: DataType::Text,
-                                    value: new_value.clone(),
-                                }),
-                            ));
-                        }
-                    };
                     let field = &cache.fields[field_idx];
-                    let new_value_gql = if let Some(new_value_str) = new_value_str {
+                    let new_value_input = if !matches!(new_value, Value::Null) {
                         match &field.kind {
-                            FieldKind::Normal => new_value_str,
-                            FieldKind::Option(options) => {
-                                if let Some(opt) =
-                                    options.iter().find(|opt| opt.name == new_value_str)
-                                {
-                                    opt.id.clone()
+                            FieldKind::Normal(ty) => {
+                                let Some(ty) = ty.as_sql_type() else {
+                                    return Err((
+                                        self,
+                                        GlueSQLError::StorageMsg(format!("readonly column: {:?}", ty)),
+                                    ));
+                                };
+
+                                fn into_update_input(
+                                    ty: &DataType,
+                                    new_value: &Value,
+                                ) -> Option<ProjectV2FieldValue> {
+                                    Some(match ty {
+                                        DataType::Date => ProjectV2FieldValue {
+                                            date: Some(match new_value {
+                                                Value::Str(s) => s.to_owned(),
+                                                Value::Date(d) => d.format("%Y-%m-%d").to_string(),
+                                                _ => None?,
+                                            }),
+                                            ..Default::default()
+                                        },
+                                        DataType::Float => ProjectV2FieldValue {
+                                            number: new_value
+                                                .cast(&DataType::Float)
+                                                .ok()
+                                                .and_then(|v| (&v).try_into().ok()),
+                                            ..Default::default()
+                                        },
+                                        DataType::Text => ProjectV2FieldValue {
+                                            text: new_value
+                                                .cast(&DataType::Text)
+                                                .ok()
+                                                .map(|v| v.into()),
+                                            ..Default::default()
+                                        },
+                                        _ => None?,
+                                    })
+                                }
+
+                                let Some(new_value_input) = into_update_input(&ty, new_value) else {
+                                    return Err((
+                                        self,
+                                        GlueSQLError::Value(ValueError::IncompatibleDataType {
+                                            data_type: ty,
+                                            value: new_value.clone(),
+                                        }),
+                                    ));
+                                };
+                                new_value_input
+                            }
+                            FieldKind::SingleSelect(options) => {
+                                let new_str: String = new_value.into();
+                                if let Some(opt) = options.iter().find(|opt| opt.name == new_str) {
+                                    ProjectV2FieldValue {
+                                        single_select_option_id: Some(opt.id.to_owned()),
+                                        ..Default::default()
+                                    }
                                 } else {
                                     return Err((
                                         self,
@@ -874,15 +984,16 @@ impl StoreMut<String> for ProjectNextStorage {
                                 completed_iterations,
                                 ..
                             } => {
-                                if let Some(opt) =
-                                    iterations.iter().find(|it| it.title == new_value_str)
-                                {
-                                    opt.id.clone()
-                                } else if let Some(it) = completed_iterations
+                                let new_str: String = new_value.into();
+                                if let Some(opt) = iterations
                                     .iter()
-                                    .find(|opt| opt.title == new_value_str)
+                                    .chain(completed_iterations.iter())
+                                    .find(|opt| opt.title == new_str)
                                 {
-                                    it.id.clone()
+                                    ProjectV2FieldValue {
+                                        iteration_id: Some(opt.id.to_owned()),
+                                        ..Default::default()
+                                    }
                                 } else {
                                     return Err((
                                         self,
@@ -892,13 +1003,13 @@ impl StoreMut<String> for ProjectNextStorage {
                             }
                         }
                     } else {
-                        String::new()
+                        Default::default()
                     };
                     if let Err(e) = self.update_item_field(
                         cache.project_id.clone(),
                         item_id.clone(),
                         field.id.clone(),
-                        new_value_gql,
+                        new_value_input,
                     ) {
                         return Err((self, GlueSQLError::Storage(e.into())));
                     }

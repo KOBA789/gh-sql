@@ -27,7 +27,7 @@ struct Opt {
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
-    let storage = storage::ProjectNextStorage::new(opt.owner, opt.project_number)?;
+    let storage = storage::ProjectNextStorage::new(opt.owner, opt.project_number as i64)?;
     let glue = gluesql::prelude::Glue::new(storage);
 
     if let Some(statement) = opt.execute {

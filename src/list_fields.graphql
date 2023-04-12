@@ -1,20 +1,54 @@
-query ($owner: String!, $projectNumber: Int!) {
+query listFields($owner: String!, $projectNumber: Int!) {
   organization(login: $owner) {
-    ...ProjectNext
+    ...ProjectV2
   }
   user(login: $owner) {
-    ...ProjectNext
+    ...ProjectV2
   }
 }
 
-fragment ProjectNext on ProjectNextOwner {
-  projectNext(number: $projectNumber) {
+fragment ProjectV2 on ProjectV2Owner {
+  __typename
+  projectV2(number: $projectNumber) {
     id
     fields(first: 100) {
       nodes {
-        id
-        name
-        settings
+        __typename
+        ... on ProjectV2Field {
+          id
+          name
+          dataType
+        }
+
+        ... on ProjectV2IterationField {
+          id
+          name
+          configuration {
+            duration
+            startDay
+            iterations {
+              id
+              title
+              duration
+              startDate
+            }
+            completedIterations {
+              id
+              title
+              duration
+              startDate
+            }
+          }
+        }
+
+        ... on ProjectV2SingleSelectField {
+          id
+          name
+          options {
+            id
+            name
+          }
+        }
       }
     }
   }

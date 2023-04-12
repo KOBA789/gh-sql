@@ -5,13 +5,19 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[build-dependencies]
+graphql_client_codegen = "0.12.0"
+syn = "1.0.82"
+reqwest = { version = "0.11.15", features = ["blocking"] }
+
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 gluesql = { version = "0.9", default-features = false, features = ["sorter"] }
-async-trait = "0.1"
+async-trait = "0.1.68"
 rustyline = "9.1"
 structopt = "0.3"
 unicode-width = "0.1"
 futures = "0.3"
+graphql_client = "0.12.0"
