@@ -6,7 +6,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-pub fn graphql<V, T>(query: &str, variables: &V) -> Result<T>
+pub fn graphql<V, T>(query: &str, variables: &V) -> Result<GraphQLResponse<T, GraphQLErrors>>
 where
     V: Serialize,
     T: DeserializeOwned,
@@ -16,6 +16,11 @@ where
         query: &'a str,
         variables: &'a V,
     }
+    #[derive(Debug, Clone, Deserialize)]
+    struct RespBody<T> {
+        data: T,
+    }
+
     let req_body = ReqBody { query, variables };
     let req_body_bytes =
         serde_json::to_vec(&req_body).context("Failed to serialize request body")?;
@@ -39,20 +44,60 @@ where
         let code = output.status.code().expect("process has been exited");
         anyhow!("`gh` exited with status code: {}\n{}", code, stderr);
     }
-    let resp = serde_json::from_slice(&output.stdout).context("Failed to parse response")?;
-    Ok(resp)
+    let err_resp: serde_json::Result<GraphQLErrors> = serde_json::from_slice(&output.stdout);
+    let data_resp: RespBody<T> = match serde_json::from_slice(&output.stdout) {
+        Ok(d) => d,
+        Err(de) => {
+            let de = anyhow::Error::new(de).context("Failed to parse response");
+            return Err(match err_resp {
+                Ok(e) => {
+                    let error_msgs = e.error_msgs();
+
+                    de.context(error_msgs)
+                }
+                Err(ee) => de.context(ee).context("Failed to parse error response"),
+            });
+        }
+    };
+
+    Ok(GraphQLResponse {
+        data: data_resp.data,
+        errors: err_resp.unwrap_or_default(),
+    })
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct GraphQLResponse<T, E = serde_json::Value> {
+#[derive(Debug, Clone)]
+pub struct GraphQLResponse<T, E = GraphQLErrors> {
     pub data: T,
+    pub errors: E,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GraphQLErrors {
+    #[serde(default)]
+    pub errors: Vec<GraphQLError>,
+}
+
+impl GraphQLErrors {
+    pub fn error_msgs(&self) -> String {
+        self.errors
+            .iter()
+            .map(|e| e.message.as_str())
+            .collect::<Vec<_>>()
+            .join(" / ")
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GraphQLError {
     #[serde(default = "Vec::new")]
-    pub errors: Vec<E>,
+    pub path: Vec<ObjectPath>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct GraphQLError {
-    #[serde(rename = "type")]
-    pub typ: String,
-    pub path: Vec<String>,
+#[serde(untagged)]
+pub enum ObjectPath {
+    Number(usize),
+    String(String),
 }
