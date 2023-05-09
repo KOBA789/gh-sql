@@ -13,7 +13,7 @@ use gluesql::{
 };
 use rustyline::{error::ReadlineError, Editor, Helper};
 
-use crate::output::Format;
+use crate::output::{error_to_string, Format};
 
 pub struct Opt {
     pub format: Format,
@@ -120,7 +120,7 @@ where
             }
             Ok(_) => {}
             Err(err) => {
-                eprintln!("SQL execution error: {:?}", err);
+                eprintln!("SQL execution error: {}", error_to_string(err));
             }
         }
         Ok(())
