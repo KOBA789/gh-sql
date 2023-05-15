@@ -340,10 +340,9 @@ impl ProjectNextStorage {
         let project_next = if let Some(project_next) = project_next {
             project_next
         } else {
-            return Err(anyhow::anyhow!(
-                "No such user or organization: {}",
-                self.owner
-            ));
+            resp.errors.error_msgs();
+            return Err(anyhow::anyhow!("{}", resp.errors.error_msgs())
+                .context("failed to fetch ProjectV2"));
         };
         let project_id = project_next.id;
         let field_nodes = project_next.fields.nodes;
@@ -767,8 +766,8 @@ impl ProjectNextStorage {
         };
         let resp: GraphQLResponse<generated::update_item_field::ResponseData> =
             gh::graphql(query, &variables)?;
-        if !resp.errors.is_empty() {
-            return Err(anyhow::anyhow!("Error: {:?}", resp.errors));
+        if !resp.errors.errors.is_empty() {
+            return Err(anyhow::anyhow!("Error: {}", resp.errors.error_msgs()));
         }
         Ok(())
     }
@@ -783,8 +782,8 @@ impl ProjectNextStorage {
             item_id,
         };
         let resp: GraphQLResponse<Response> = gh::graphql(query, &variables)?;
-        if !resp.errors.is_empty() {
-            return Err(anyhow::anyhow!("Error: {:?}", resp.errors));
+        if !resp.errors.errors.is_empty() {
+            return Err(anyhow::anyhow!("Error: {}", resp.errors.error_msgs()));
         }
         Ok(())
     }

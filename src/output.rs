@@ -1,8 +1,18 @@
 use std::{fmt, io, str::FromStr};
 
 use anyhow::{anyhow, Error, Result};
-use gluesql::prelude::Value;
+use gluesql::data::Value;
+use gluesql::result::Error as SqlError;
 use unicode_width::UnicodeWidthStr;
+
+/// display anyhow::Error in a more readable way
+pub fn error_to_string(e: SqlError) -> String {
+    if let SqlError::Storage(e) = &e {
+        format!("{e:?}")
+    } else {
+        format!("{e}")
+    }
+}
 
 #[derive(Debug)]
 pub enum Format {
