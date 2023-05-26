@@ -25,9 +25,8 @@ jobs:
         env:
           TARGET_TRIPLE: x86_64-apple-darwin
           GOOS_GOARCH: darwin-amd64
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           target: aarch64-apple-darwin
       - name: Build for Apple Silicon macOS
         run: bash ./scripts/build.sh
