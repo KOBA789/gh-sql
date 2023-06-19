@@ -12,14 +12,14 @@ jobs:
   release-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: cli/gh-extension-precompile@v1
         with:
           build_script_override: "./scripts/build.sh"
   release-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build for Intel macOS
         run: bash ./scripts/build.sh
         env:
@@ -44,7 +44,7 @@ jobs:
   release-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build for x86_64 Windows
         run: bash ./scripts/build.sh
         env:
